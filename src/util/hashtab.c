@@ -30,6 +30,7 @@
 #include "fgh.h"
 #include "fghk.h"
 #include "memutil.h"
+#include "message.h"
 #include "minmax.h"
 
 #define HASHTAB_DEFAULT_NESTS 32	/* capacity == #nests * nest size */
@@ -227,13 +228,19 @@ hashtab_put(struct hashtab *table, const void *key,
 		/*
 		 * Calculate both hashes for the ejectee; we'll move it
 		 * to its other location.  Note that a collision is
-		 * possible but should not break anything.
+		 * possible but should not break anything.  If the entry
+		 * doesn't hash to where it's currently stored, it must
+		 * have been changed outside this code--while this won't
+		 * technically break anything (this code would just try
+		 * to insert it according to its current hash value),
+		 * it's mostly likely a sign of a bug, so we panic.
 		 */
 		uint32_t h1, h2;
-		h1 = fgh32(entry.key, entry.keysize, FGHK[0]);
-		h2 = fgh32(entry.key, entry.keysize, FGHK[1]);
-		assert(pos == (h1 & mask) || pos == (h2 & mask));
-		pos = (pos == (h1 & mask)) ? (h2 & mask) : (h1 & mask);
+		h1 = mask & fgh32(entry.key, entry.keysize, FGHK[0]);
+		h2 = mask & fgh32(entry.key, entry.keysize, FGHK[1]);
+		if	(pos == h1) pos = h2;
+		else if (pos == h2) pos = h1;
+		else	panic("Table key mutated!\n");
 	}
 
 	/*
