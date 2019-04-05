@@ -1,0 +1,25 @@
+Remainder dividend smaller than divisor:
++0
++0
++0
++0
++1
++1
+-1
+-1
++1
++1
+-1
+-1
+Remainder small divisors:
++1
+-1
++1
+-1
+Remainder sign check:
++10000
++10000
+-10000
+-10000
+Regression test cases:
++0

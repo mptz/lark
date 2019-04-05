@@ -1,0 +1,41 @@
+	LDLc	R0, '0'
+	LDLc	R1, '1'
+	LDLc	R2, '2'
+	LDLc	R3, '3'
+	LDLc	R4, '4'
+	JMP	forward0
+forward0:
+	LDLc	R5, '5'
+	LDLc	R6, '6'
+	LDLc	R7, '7'
+	LDLc	R8, '8'
+	LDLc	R9, '9'
+	LDLc	RA, 'A'
+	LDLc	RB, 'B'
+	LDLc	RC, 'C'
+	LDLc	RD, '\n'
+	LDLw	RE, #0
+	MOV	RF, RE
+	JMP	forward1
+	PRINTc	R0
+	PRINTc	R1
+backward1:
+	PRINTc	R2
+	PRINTc	R3
+forward1:
+	PRINTc	R4
+	PRINTc	R5
+	PRINTc	R6
+	JMP	forward2
+	PRINTc	R7
+	PRINTc	R8
+	PRINTc	R9
+forward2:
+	PRINTc	RA
+	PRINTc	RB
+	PRINTc	RC
+	PRINTc	RD
+	CMPw	RE, RF
+	INCw	RF
+	JEQ	backward1
+	HALT

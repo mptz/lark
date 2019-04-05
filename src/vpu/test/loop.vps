@@ -1,0 +1,16 @@
+|* Test looping
+	LDLc	RE, ' '
+	LDLc	RF, '\n'
+
+	LDLw	R0, #0		|* loop counter
+	LDLw	R1, #10		|* loop bound
+top:
+	PRINTw	R0
+	PRINTc	RE
+	INCw	R0
+	CMPw	R0, R1
+	JLT	top
+	LDLs	R2, "done"
+	PRINTs	R2
+	PRINTc	RF
+	HALT

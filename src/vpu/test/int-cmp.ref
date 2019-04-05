@@ -1,0 +1,15 @@
+Comparison zero cases:
+#+0 #+0
+#+0 #-1
+#+0 #+1
+#+0 #+1
+#+0 #-1
+Comparison same-sign cases:
+#+0 #-1
+#+0 #+1
+#+0 #+1
+#+0 #-1
+Comparison opposite-sign cases:
+#+0 #-1
+#+0 #+1
+Regression test cases:

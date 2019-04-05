@@ -1,0 +1,14 @@
+	LDLn	R0, 0		|* Constant zero for comparisons
+	LDLn	R1, 100		|* Serves as counter and multiplier
+	LDLn	R2, 1 		|* Result accumulator
+
+loop:
+	MULn	R2, R1		|* result *= counter
+	DECn	R1		|* Decrement counter
+	CMPn	R1, R0		|* Counter == 0?
+	JNE	loop		|* Repeat loop if not
+
+	PRINTn	R2		|* Print result
+	LDLc	RF, '\n'
+	PRINTc	RF		|* Print EOL
+	HALT

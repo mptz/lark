@@ -1,0 +1,28 @@
+*** COMPARE EQUAL VALUES ***
+#+0
+#+0
+#+0
+#+0
+#+0
+*** COMPARE ZERO-/ONE-LIMB VALUES ***
+#-1
+#+1
+#-1
+#+1
+#-1
+#+1
+#-1
+#+1
+#-1
+#+1
+*** COMPARE BIGNUM VALUES ***
+#-1
+#+1
+#-1
+#+1
+#-1
+#+1
+#-1
+#+1
+#-1
+#+1

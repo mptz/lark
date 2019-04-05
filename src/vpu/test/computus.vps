@@ -1,0 +1,12 @@
+	|* R0..R3 are numeric scratch registers
+	LDLz	R4, +1961	|* Year
+				|* a = Y mod 4
+	LDLz	R0, +4
+	
+	LDLz	R1, 100		|* Serves as counter and multiplier
+	LDLz	R2, 1 		|* Result accumulator
+
+	PRINTz	R4		|* Print result
+	LDLc	RF, '\n'
+	PRINTc	RF		|* Print EOL
+	HALT

@@ -77,7 +77,7 @@ PATH := $(shell pwd)/bin:$(PATH)
 # modules by generating subdir Makefiles from m4 templates, then including
 # them.
 
-all-subdir-names := util
+all-subdir-names := calc util vpu
 all-subdirs := $(patsubst %,src/%/,$(sort $(all-subdir-names)))
 
 # The key variables which are populated as we bring in modules.
@@ -126,8 +126,10 @@ build: $(addsuffix @build,$(all-modules))
 nop: ;
 
 # Conveniences build targets for commonly built subdirectories.
-.PHONY: util
+.PHONY: calc util vpu
+calc: src/calc/@build
 util: src/util/@build
+vpu: src/vpu/@build
 
 # ========================
 #	Test Targets

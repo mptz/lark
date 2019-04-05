@@ -1,0 +1,14 @@
+Pointer-comparison path:
+#+0 #+0 #+0
+Single-limb values:
+#-1 #+1 #+0
+#-1 #+1 #+0
+#-1 #+1 #+0
+#-1 #+1 #+0
+Different numbers of limbs in values:
+#-1 #+1
+#-1 #+1
+Same numbers of limbs in values:
+#-1 #+1
+#-1 #+1
+#-1 #+0 #+1

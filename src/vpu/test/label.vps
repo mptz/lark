@@ -1,0 +1,13 @@
+|* XXX this needs a lot more cases
+|* Currently just a placeholder
+
+start:
+	MOV	R0, R5
+	NOP
+another_label:
+	ADDw	R3, R7
+	INCw	R4
+	LDLo	RA, another_label
+	LDLw	R5, #123
+	HALT
+after_the_end:
