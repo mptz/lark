@@ -25,6 +25,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/*
+ * A Fairly Good Hash.
+ */
+
 extern uint32_t
 fgh32(const void *key, size_t size, uintptr_t k);
 
