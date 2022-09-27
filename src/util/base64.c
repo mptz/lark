@@ -160,8 +160,6 @@ base64_decode(void *dst, size_t dstsize, const void *src, size_t srcsize)
 	struct base64_state state;
 	size_t decoded, finished;
 
-	if (srcsize % 4)
-		return error;
 	base64_stream_start(&state, BASE64_DECODE);
 	decoded = base64_stream(&state, dst, dstsize, src, srcsize);
 	srcsize -= base64_stream_consumed(&state);	/* for assert */

@@ -97,8 +97,6 @@ base64_stream(struct base64_state *state, void *dst, size_t dstsize,
  * They return the number of bytes written into the destination
  * buffer, or (size_t) -1 if the destination buffer was not large
  * enough to hold the decoded/encoded version of the given data.
- *
- * base64_decode() requires that 'srcsize' be a multiple of 4.
  */
 extern size_t
 base64_decode(void *dst, size_t dstsize, const void *src, size_t srcsize);
