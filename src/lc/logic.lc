@@ -1,0 +1,11 @@
+; Basic concepts
+ID	:= \x. x
+BOTTOM	:= (\w. w w) (\w. w w)
+EXPLODE := (\w. w w w) (\w. w w w)
+
+; Boolean logic operations
+TRUE	:= \x _. x
+FALSE	:= \_ y. y
+AND	:= \p q. p q p
+OR	:= \p q. p p q
+NOT	:= \p a b. p b a

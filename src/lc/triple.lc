@@ -1,0 +1,5 @@
+; Triple operations
+CONS3	:= \x y z f. f x y z
+TRIP1	:= \t. t (\x _ _. x)
+TRIP2	:= \t. t (\_ y _. y)
+TRIP3	:= \t. t (\_ _ z. z)

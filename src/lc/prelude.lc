@@ -1,0 +1,28 @@
+#include "logic.lc"
+#include "church.lc"
+#include "list.lc"
+#include "triple.lc"
+#include "div.lc"
+#include "integer.lc"
+#include "ski.lc"
+
+; The canonical fixpoint operator and an alternate version
+Y	:= \g. (\x. g (x x)) (\x. g (x x))
+Y2	:= (\x y. x y x) (\y x. y (x y x))
+
+; Factorial, both a basic and an accumulating tail-recursive variant
+FACT-SLOW := Y (\h n. ZEROP n ONE (MULT n (h (PRED n))))
+FACT := Y (\h a n. ZEROP n a (h (MULT n a) (PRED n))) ONE
+
+; List constructors
+MAKE-LIST := \n0 x0. (Y (\h n a. ZEROP n a (h (PRED n) (CONS x0 a)))) n0 NIL
+IOTA := Y (\h n. ZEROP n NIL (CONS n (h (PRED n))))
+
+; Primitive list functions
+FOLD := \f. Y (\h s r. NULLP r s (h (f s (CAR r)) (CDR r)))
+MAP := \f. Y (\h r. NULLP r NIL (CONS (f (CAR r)) (h (CDR r))))
+
+; List functions
+APPEND := Y (\h l0 l1. NULLP l0 l1 (CONS (CAR l0) (h (CDR l0) l1)))
+LENGTH := FOLD (\n x. SUCC n) ZERO
+REVERSE := Y (\h a r. NULLP r a (h (CONS (CAR r) a) (CDR r))) NIL

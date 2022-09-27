@@ -1,0 +1,68 @@
+#echo "Testing ZERO, SUCC, ZEROP"
+ZEROP ZERO
+ZEROP ONE
+ZEROP SEVEN
+SUCC ZERO
+SUCC ONE
+SUCC SEVEN
+ZEROP (SUCC ZERO)
+NOT (ZEROP (SUCC ZERO))
+
+#echo "Testing ADD"
+ADD ZERO ZERO
+ADD ZERO ONE
+ADD ONE ZERO
+ADD ZERO FIVE
+ADD FIVE ZERO
+ADD ONE ONE
+ADD FOUR FIVE
+
+#echo "Testing MULT"
+MULT ZERO ZERO
+MULT ZERO FOUR
+MULT FOUR ZERO
+MULT ONE ONE
+MULT ONE SIX
+MULT SIX ONE
+MULT FIVE SIX
+MULT TEN TEN
+
+#echo "Testing SQUARE and CUBE"
+SQUARE ZERO
+SQUARE ONE
+SQUARE THREE
+SQUARE SIX
+CUBE ZERO
+CUBE ONE
+CUBE THREE
+CUBE SIX
+
+#echo "Testing POW"
+; Note POW n ZERO (including the case for n == ZERO, which doesn't have
+; a mathematically well-defined outcome) yields ID = \x. x = (\ 0), which
+; is eta-equivalent to ONE = \f x. f x = (\ (\ (1 0)).  Since my readback
+; for Church numerals doesn't work modulo eta equivalence, I'm leaving
+; those test cases out.  However, we can recover standard Church numerals
+; via addition.
+ADD (POW ZERO ZERO) THREE
+ADD TWO (POW FIVE ZERO)
+POW ZERO ONE
+POW SIX ONE
+POW TWO FIVE
+POW FOUR FOUR
+
+#echo "Testing primitive PRED and SUB"
+PRED-PRIMITIVE ONE
+PRED-PRIMITIVE FIVE
+SUB-PRIMITIVE FOUR FOUR
+SUB-PRIMITIVE THREE TWO
+SUB-PRIMITIVE FIVE TWO
+SUB-PRIMITIVE SEVEN SIX
+
+#echo "Testing addition-based PRED and SUB"
+PRED-ADDITION ONE
+PRED-ADDITION FIVE
+SUB-ADDITION FOUR FOUR
+SUB-ADDITION THREE TWO
+SUB-ADDITION FIVE TWO
+SUB-ADDITION SEVEN SIX

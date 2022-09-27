@@ -1,7 +1,7 @@
 #
 # Master Makefile for Lark.
 #
-# Copyright (c) 2001-2019 Michael P. Touloumtzis.
+# Copyright (c) 2001-2022 Michael P. Touloumtzis.
 #
 # Permission is hereby granted, free of charge, to any person obtaining a
 # copy of this software and associated documentation files (the "Software"),
@@ -77,7 +77,7 @@ PATH := $(shell pwd)/bin:$(PATH)
 # modules by generating subdir Makefiles from m4 templates, then including
 # them.
 
-all-subdir-names := calc util vpu
+all-subdir-names := calc lc util vpu
 all-subdirs := $(patsubst %,src/%/,$(sort $(all-subdir-names)))
 
 # The key variables which are populated as we bring in modules.

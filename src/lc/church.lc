@@ -1,0 +1,29 @@
+; Basic operations on Church numerals
+ZERO	:= \f x. x
+ZEROP	:= \n. n (\_. FALSE) TRUE
+SUCC	:= \n f x. f (n f x)
+ADD	:= \m n f x. n f (m f x)
+MULT	:= \m n f. m (n f)
+SQUARE	:= \n. MULT n n
+CUBE	:= \n. MULT (MULT n n) n
+POW	:= \b e. e b
+
+; Primitive versions of predecessor and subtraction
+PRED-PRIMITIVE	:= \n f x. n (\g h. h (g f)) (\_. x) ID
+SUB-PRIMITIVE	:= \m n. n PRED-PRIMITIVE m
+
+; Define some numbers directly rather than with SUCC
+ONE	:= \f x. f x
+TWO	:= \f x. f (f x)
+THREE	:= \f x. f (f (f x))
+FOUR	:= \f x. f (f (f (f x)))
+FIVE	:= \f x. f (f (f (f (f x))))
+SIX	:= \f x. f (f (f (f (f (f x)))))
+SEVEN	:= \f x. f (f (f (f (f (f (f x))))))
+EIGHT	:= \f x. f (f (f (f (f (f (f (f x)))))))
+NINE	:= \f x. f (f (f (f (f (f (f (f (f x))))))))
+TEN	:= \f x. f (f (f (f (f (f (f (f (f (f x)))))))))
+
+; Predecessor and subtraction based on addition + truth testing
+PRED-ADDITION	:= \n. n (\g k. ZEROP (g ONE) k (ADD (g k) ONE)) (\_. ZERO) ZERO
+SUB-ADDITION	:= \m n. n PRED-ADDITION m
