@@ -22,7 +22,6 @@
 
 #include <assert.h>
 #include <math.h>
-#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -217,6 +216,19 @@ wordtab_put(struct wordtab *table, word key, void *data)
 	 */
 	wordtab_grow(table);
 	wordtab_put(table, entry.key, entry.data);
+}
+
+bool
+wordtab_rub(struct wordtab *table, word key)
+{
+	/*
+	 * Update the table, writing the out-of-band value into the
+	 * entry for the given key (if it exists), which effectively
+	 * removes the key-value pair from the table.  Note this does
+	 * not free the value.
+	 */
+	return wordtab_update(table, key, table->oob, FGHK[0]) ||
+	       wordtab_update(table, key, table->oob, FGHK[1]);
 }
 
 void

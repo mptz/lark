@@ -22,6 +22,7 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
+#include <stdbool.h>
 #include <stddef.h>
 
 #include "word.h"
@@ -59,6 +60,7 @@ extern void wordtab_fini(struct wordtab *table);
 extern void wordtab_free_all_data(struct wordtab *table);
 extern void *wordtab_get(const struct wordtab *table, word key);
 extern void wordtab_put(struct wordtab *table, word key, void *data);
+extern bool wordtab_rub(struct wordtab *table, word key);
 extern void wordtab_set_oob(struct wordtab *table, void *oob);
 extern void wordtab_stats(struct wordtab *table, struct wordtab_stats *stats);
 extern void wordtab_iter_init(struct wordtab *table, struct wordtab_iter *iter);

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009-2015 Michael P. Touloumtzis.
+ * Copyright (c) 2009-2021 Michael P. Touloumtzis.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -156,7 +156,7 @@ xor256bit(void *d, const void *sa, const void *sb)
 static uint32_t feedback_state [16],	/* 512 bits, 1st half I, 2nd half S */
 		*feedback_seed = feedback_state + 8;
 
-void feedback_stream_init(int fd)
+static void feedback_stream_init(int fd)
 {
 	if (r_readall(fd, feedback_state, sizeof feedback_state))
 		ppanic("read from random source");
@@ -185,7 +185,7 @@ void feedback_stream_init(int fd)
 	xor256bit(feedback_seed, feedback_seed, entropy);
 }
 
-void feedback_stream_next(void *out256)
+static void feedback_stream_next(void *out256)
 {
 	/*
 	 * Interleave various flavors of current-time-nanoseconds with the
@@ -229,7 +229,7 @@ static keyInstance nonce_key;
 static cipherInstance nonce_cipher;
 static struct uint128 nonce_counter;
 
-void nonce_stream_init(int fd, const char *nonce, const char *attestor)
+static void nonce_stream_init(int fd, const char *nonce, const char *attestor)
 {
 	/* initial state derived from the provided strings */
 	struct sha256_state hash;
@@ -259,7 +259,7 @@ void nonce_stream_init(int fd, const char *nonce, const char *attestor)
 		ppanic("read from random source");
 }
 
-void nonce_stream_next(void *out256)
+static void nonce_stream_next(void *out256)
 {
 	void *out1h = out256, *out2h = ((uint8_t*) out256) + 16;
 	twofish_encrypt(&nonce_cipher, &nonce_key, &nonce_counter, 1, out1h);
@@ -289,11 +289,11 @@ static int check_redundant(bits256 bits)
 	return !memcmp(bits + RANDOM_BYTES, hash, CHECK_BYTES);
 }
 
-void usage(void) __attribute__ ((noreturn));
-void usage(void)
+static void usage(void) __attribute__ ((noreturn));
+static void usage(void)
 {
 	fprintf(stderr,
-"Usage: %s -N <nonce> -A <attestor> [-n <# of HUIDs to generate>] [-r]\n"
+"Usage: %s -N <nonce> -A <attestor> [-n <# of HUIDs to generate> | -s] [-r]\n"
 "    *** PLEASE READ ***\n"
 "This tool generates 'HUIDs', Hopefully-Unique IDs.  If you use it carefully,\n"
 "you can be confident that no one else has these HUIDs.  However, random ID\n"
@@ -319,18 +319,22 @@ void usage(void)
 "    -r\n"
 "       Generate a HUID with internal redundancy; such a HUID is 192 bits\n"
 "       long, with 144 random bits and 48 bits of checkable redundancy.\n"
+"    -s\n"
+"       Streaming operation: generate an endless list of HUIDs.  Use with\n"
+"       caution as with the exception of fine-grained time information, new\n"
+"       sources of entropy aren't incorporated after initialization.\n"
 	,
 	execname, execname, execname
 	);
 	exit(EXIT_FAILURE);
 }
 
-void genkeys(unsigned nk, int redundant)
+static void genkeys(unsigned nk, int streaming, int redundant)
 {
 	bits256 feedbackbuf, noncebuf, mixbuf;
 	char b64buf [100];
 
-	while (nk--) {
+	while (streaming || nk--) {
 		/*
 		 * Generate 256 bits of raw pseudorandom output material
 		 * by combining multiple PRNG streams.
@@ -369,10 +373,10 @@ int main(int argc, char *argv[])
 {
 	const char *attestor = NULL, *nonce = NULL;
 	unsigned long nk = 1;
-	int c, redundant = 0;
+	int c, redundant = 0, streaming = 0;
 
 	set_execname(argv[0]);
-	while ((c = getopt(argc, argv, "A:n:N:r")) != -1) {
+	while ((c = getopt(argc, argv, "A:n:N:rs")) != -1) {
 		switch (c) {
 		case 'A': attestor = optarg; break;
 		case 'n': {
@@ -386,6 +390,7 @@ int main(int argc, char *argv[])
 		}
 		case 'N': nonce = optarg; break;
 		case 'r': redundant = 1; break;
+		case 's': streaming = 1; break;
 		default: usage();
 		}
 	}
@@ -404,6 +409,6 @@ int main(int argc, char *argv[])
 	feedback_stream_init(fd);
 	nonce_stream_init(fd, nonce, attestor);
 	p_close(fd);
-	genkeys(nk, redundant);
+	genkeys(nk, streaming, redundant);
 	return 0;
 }

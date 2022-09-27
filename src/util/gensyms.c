@@ -1,7 +1,5 @@
-#ifndef LARK_UTIL_WORD_H
-#define LARK_UTIL_WORD_H
 /*
- * Copyright (c) 2009-2015 Michael P. Touloumtzis.
+ * Copyright (c) 2009-2019 Michael P. Touloumtzis.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -22,44 +20,16 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
-#include <stdint.h>
+#include <stdio.h>
 
-/*
- * A machine word.  Specifically, the minimal size which is big enough
- * to hold either a pointer or a value from a general purpose register.
- * On modern mainstream systems these notions coincide.
- */
-typedef uintptr_t word;
+#include "symtab.h"
 
-#define WORD_MAX UINTPTR_MAX
-#define WORD_MIN 0
-#define WORD_SIZE (sizeof (word))
-#define WORD_ALIGNED(x) (((x) & (sizeof (word) - 1)) == 0)
-
-/*
- * Same thing, signed.
- */
-typedef intptr_t offset;
-
-#define OFFSET_MAX INTPTR_MAX
-#define OFFSET_MIN INTPTR_MIN
-#define OFFSET_SIZE (sizeof (offset))
-
-/*
- * Word-sized floating point numbers.
- */
-#if UINTPTR_MAX == UINT32_MAX
-typedef float fpw;
-#else
-typedef double fpw;
-#endif
-
-/*
- * "Undefined behavior"
- */
-union fpw_word_pun {
-	fpw f;
-	word w;
-};
-
-#endif /* LARK_UTIL_WORD_H */
+int main(int argc, char *argv[])
+{
+	symtab_intern("unused");	/* initialize */
+	while (1) {
+		symbol_mt sym = symtab_gensym();
+		puts(symtab_lookup(sym));
+	}
+	return 0;
+}

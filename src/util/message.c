@@ -123,7 +123,7 @@ void
 panic_real(const char *file, const char *function, int line,
 	   const char *message)
 {
-	fprintf(stderr, "%s: %s in %s (%d): PANIC: %sBacktrace:\n", execname,
+	fprintf(stderr, "%s: %s in %s (%d): PANIC: %s\n", execname,
 		file, function, line, message);
 	print_backtrace();
 	exit(failure_exit_code);
@@ -133,7 +133,7 @@ void
 ppanic_real(const char *file, const char *function, int line,
 	    const char *errstr)
 {
-	fprintf(stderr, "%s: %s in %s (%d): PANIC: %s: %s\nBacktrace:\n",
+	fprintf(stderr, "%s: %s in %s (%d): PANIC: %s: %s\n",
 		execname, file, function, line, errstr, strerror(errno));
 	print_backtrace();
 	exit(failure_exit_code);
@@ -150,7 +150,6 @@ panicf_real(const char *file, const char *function, int line,
 	va_start(ap, format);
 	vfprintf(stderr, format, ap);
 	va_end(ap);
-	fputs("Backtrace:\n", stderr);
 	print_backtrace();
 	exit(failure_exit_code);
 }
@@ -158,6 +157,7 @@ panicf_real(const char *file, const char *function, int line,
 static void
 print_backtrace(void)
 {
+	fputs("Backtrace:\n", stderr);
 #ifdef HAVE_BACKTRACE
 	void *frames [200];	/* glibc info page suggests 200 */
 	int nframes = backtrace(frames, sizeof frames / sizeof *frames);

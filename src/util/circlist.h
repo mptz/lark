@@ -1,7 +1,7 @@
 #ifndef LARK_UTIL_CIRCLIST_H
 #define LARK_UTIL_CIRCLIST_H
 /*
- * Copyright (c) 2009-2015 Michael P. Touloumtzis.
+ * Copyright (c) 2009-2021 Michael P. Touloumtzis.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -75,6 +75,26 @@ circlist_is_empty(const struct circlist *sentinel)
 	assert((sentinel->prev == sentinel && sentinel->next == sentinel) ||
 	       (sentinel->prev != sentinel && sentinel->next != sentinel));
 	return sentinel->prev == sentinel;
+}
+
+static inline int
+circlist_is_inhabited(const struct circlist *sentinel)
+{
+	assert((sentinel->prev == sentinel && sentinel->next == sentinel) ||
+	       (sentinel->prev != sentinel && sentinel->next != sentinel));
+	return sentinel->prev != sentinel;
+}
+
+static inline int
+circlist_is_head(const struct circlist *sentinel, const struct circlist *entry)
+{
+	return sentinel->next == entry;
+}
+
+static inline int
+circlist_is_tail(const struct circlist *sentinel, const struct circlist *entry)
+{
+	return sentinel->prev == entry;
 }
 
 static inline struct circlist *

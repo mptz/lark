@@ -1,7 +1,7 @@
-#ifndef LARK_UTIL_WORD_H
-#define LARK_UTIL_WORD_H
+#ifndef LARK_UTIL_HUID_H
+#define LARK_UTIL_HUID_H
 /*
- * Copyright (c) 2009-2015 Michael P. Touloumtzis.
+ * Copyright (c) 2009-2021 Michael P. Touloumtzis.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -22,44 +22,17 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
-#include <stdint.h>
+#define HUID_RANDOM_BYTES	18	/* 144 bits */
+#define HUID_CHECK_BYTES	6	/* 48 bits */
+#define HUID_BYTES		18	/* 144 bits */
+#define HUID_REDUNDANT_BYTES	24	/* 192 bits */
 
-/*
- * A machine word.  Specifically, the minimal size which is big enough
- * to hold either a pointer or a value from a general purpose register.
- * On modern mainstream systems these notions coincide.
- */
-typedef uintptr_t word;
+#define HUID_CHARS		26	/* 3 x 8 chars + 2 x delimiter */
+#define HUID_STR		27	/* ... plus one for NUL terminator */
+#define HUID_REDUNDANT_CHARS	35	/* 4 x 8 chars + 3 x delimiter */
 
-#define WORD_MAX UINTPTR_MAX
-#define WORD_MIN 0
-#define WORD_SIZE (sizeof (word))
-#define WORD_ALIGNED(x) (((x) & (sizeof (word) - 1)) == 0)
+extern void huid_decode(void *huidb, const char *huidc);
+extern void huid_encode(char *huidc, const void *huidb);
+extern const void *huid_c2b(const char *huidc);	/* allocates */
 
-/*
- * Same thing, signed.
- */
-typedef intptr_t offset;
-
-#define OFFSET_MAX INTPTR_MAX
-#define OFFSET_MIN INTPTR_MIN
-#define OFFSET_SIZE (sizeof (offset))
-
-/*
- * Word-sized floating point numbers.
- */
-#if UINTPTR_MAX == UINT32_MAX
-typedef float fpw;
-#else
-typedef double fpw;
-#endif
-
-/*
- * "Undefined behavior"
- */
-union fpw_word_pun {
-	fpw f;
-	word w;
-};
-
-#endif /* LARK_UTIL_WORD_H */
+#endif /* LARK_UTIL_HUID_H */
