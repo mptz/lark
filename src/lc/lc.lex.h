@@ -1,5 +1,5 @@
-#ifndef NOODLE_LC_LC_LEX_H
-#define NOODLE_LC_LC_LEX_H
+#ifndef LARK_LC_LC_LEX_H
+#define LARK_LC_LC_LEX_H
 /*
  * Copyright (c) 2009-2015 Michael P. Touloumtzis.
  *
@@ -34,4 +34,4 @@ extern int lc_yylex_destroy(lc_yyscan_t scanner);
 extern void lc_yyrestart(FILE *fin, lc_yyscan_t scanner);
 extern void lc_lex_string(const char *s, lc_yyscan_t scanner);
 
-#endif /* NOODLE_LC_LC_LEX_H */
+#endif /* LARK_LC_LC_LEX_H */

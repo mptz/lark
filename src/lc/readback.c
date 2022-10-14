@@ -35,7 +35,6 @@ static void readback_bool(const struct term *term)
 	/* we expect the term to be closed */
 	assert(term->var.index == 0 || term->var.index == 1);
 	printf("read: %s\n", term->var.index ? "TRUE" : "FALSE");
-	return;
 }
 
 static void readback_int(const struct term *term)

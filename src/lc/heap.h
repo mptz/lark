@@ -1,5 +1,5 @@
-#ifndef NOODLE_LC_HEAP_H
-#define NOODLE_LC_HEAP_H
+#ifndef LARK_LC_HEAP_H
+#define LARK_LC_HEAP_H
 /*
  * Copyright (c) 2009-2022 Michael P. Touloumtzis.
  *
@@ -39,4 +39,4 @@ extern void heap_init(void);
 extern void heap_allocator_register(struct allocator *alloc);
 extern void heap_allocator_deregister(struct allocator *alloc);
 
-#endif /* NOODLE_LC_HEAP_H */
+#endif /* LARK_LC_HEAP_H */

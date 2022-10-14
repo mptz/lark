@@ -1,5 +1,5 @@
-#ifndef NOODLE_LC_ENV_H
-#define NOODLE_LC_ENV_H
+#ifndef LARK_LC_ENV_H
+#define LARK_LC_ENV_H
 /*
  * Copyright (c) 2009-2022 Michael P. Touloumtzis.
  *
@@ -45,4 +45,4 @@ extern void env_init(void);
 extern void env_install(struct term *sym);
 extern struct term *env_lookup(symbol_mt name);
 
-#endif /* NOODLE_LC_ENV_H */
+#endif /* LARK_LC_ENV_H */

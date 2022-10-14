@@ -1,5 +1,5 @@
-#ifndef NOODLE_LC_TERM_H
-#define NOODLE_LC_TERM_H
+#ifndef LARK_LC_TERM_H
+#define LARK_LC_TERM_H
 /*
  * Copyright (c) 2009-2022 Michael P. Touloumtzis.
  *
@@ -89,4 +89,4 @@ extern void term_index(struct term *term);
 extern void term_print(const struct term *term);
 extern void term_print_indexed(const struct term *term);
 
-#endif /* NOODLE_LC_TERM_H */
+#endif /* LARK_LC_TERM_H */

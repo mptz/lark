@@ -1,5 +1,5 @@
-#ifndef NOODLE_LC_INCLUDE_H
-#define NOODLE_LC_INCLUDE_H
+#ifndef LARK_LC_INCLUDE_H
+#define LARK_LC_INCLUDE_H
 /*
  * Copyright (c) 2009-2022 Michael P. Touloumtzis.
  *
@@ -24,4 +24,4 @@
 
 extern int lc_include(const char *pathname);
 
-#endif /* NOODLE_LC_INCLUDE_H */
+#endif /* LARK_LC_INCLUDE_H */

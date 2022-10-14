@@ -1,5 +1,5 @@
-#ifndef NOODLE_LC_LC_H
-#define NOODLE_LC_LC_H
+#ifndef LARK_LC_LC_H
+#define LARK_LC_LC_H
 /*
  * Copyright (c) 2009-2022 Michael P. Touloumtzis.
  *
@@ -28,4 +28,4 @@ struct allocator;
 
 extern int lc_yyparse(struct allocator *alloc, void *scanner);
 
-#endif /* NOODLE_LC_LC_H */
+#endif /* LARK_LC_LC_H */

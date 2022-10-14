@@ -51,7 +51,6 @@ static int lc_yyerror(struct allocator *alloc, lc_yyscan_t scanner,
 %token TOKEN_END_OF_LINE
 %token TOKEN_ENV_DUMP
 %token TOKEN_INCLUDE
-%token TOKEN_SCAN_ERROR		/* not referenced in grammar */
 %token TOKEN_SYMBOL
 %token TOKEN_VARIABLE
 

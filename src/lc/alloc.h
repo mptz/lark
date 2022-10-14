@@ -1,5 +1,5 @@
-#ifndef NOODLE_LC_ALLOC_H
-#define NOODLE_LC_ALLOC_H
+#ifndef LARK_LC_ALLOC_H
+#define LARK_LC_ALLOC_H
 /*
  * Copyright (c) 2009-2022 Michael P. Touloumtzis.
  *
@@ -47,4 +47,4 @@ extern struct term *allocator_pop(struct allocator *alloc);
 extern void allocator_reset(struct allocator *alloc);
 extern struct term *allocator_top(struct allocator *alloc);
 
-#endif /* NOODLE_LC_ALLOC_H */
+#endif /* LARK_LC_ALLOC_H */

@@ -1,5 +1,5 @@
-#ifndef NOODLE_LC_MAIN_H
-#define NOODLE_LC_MAIN_H
+#ifndef LARK_LC_MAIN_H
+#define LARK_LC_MAIN_H
 /*
  * Copyright (c) 2009-2022 Michael P. Touloumtzis.
  *
@@ -26,4 +26,4 @@ struct term;
 
 extern void run_reduce(struct term *term);
 
-#endif /* NOODLE_LC_MAIN_H */
+#endif /* LARK_LC_MAIN_H */
