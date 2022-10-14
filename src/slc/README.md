@@ -12,16 +12,16 @@ This implementation corrects several bugs present in the OCaml reference
 code which accompanies the paper.  In making changes I was careful to
 preserve the O(1) performance of state transitions.
 
-* Environment copying (copy_env) doesn't alpha-convert bound variables.
+* Environment copying (**copy_env**) doesn't alpha-convert bound variables.
   Although "crumbling variables" (sharing nodes introduced by the
   "crumbling transformation" and during reduction) are identified by
   their memory addresses and are thus automatically alpha-converted by
-  copying, the same is not true for lambda binders and their bound
-  variables.  This can be reproduced by attempting to evaluate
+  copying, the same is not true for lambda formal parameters and their
+  bound variables.  This can be reproduced by attempting to evaluate
 	`S (K S) K`
   where, as usual, `K := \x y. x` and `S := \x y z. (x z) (y z)`.
 
-  This issue led to the most significant departure betwen SLC and the
+  This issue led to the most significant departure between SLC and the
   reference SCAM machine implementation: I adopted a locally-nameless
   representation using pointers (memory addresses) for free variables and
   De Bruijn indexes for bound variables.  De Bruijn indexes are naturally
@@ -33,7 +33,7 @@ preserve the O(1) performance of state transitions.
   with constructors **Shared** and **Var**, which prevents it from
   eliminating some administrative renames.  This causes the
   beta-reduction rules to miss some abstractions, leading to 
-  unevaluted redexes in the right-to-left traversal (**eval_RL**).
+  unevaluated redexes in the right-to-left traversal (**eval_RL**).
   This can be reproduced by attempting to evaluate
 	`(\x. x) (\y. y) v`
   which fails to reach normal form.
