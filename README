@@ -1,0 +1,21 @@
+Build dependencies (on Debian):
+
+	make
+	m4
+	flex
+	bison
+	libtool
+	libtool-bin
+	libgmp-dev
+	libreadline-dev
+
+To build and test:
+
+	make
+	make test	# builds first if necessary
+
+To build a subdirectory (e.g. lc):
+
+	make nop	# at top level; creates subdir Makefiles
+	cd src/lc
+	make
