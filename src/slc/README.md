@@ -58,7 +58,7 @@ additional GC sites (in **reduce**, `reduce.c`).
   of the environment in progress; simply delete it.  This happens when
   a lambda body doesn't reference its bound variable.
 
-- Similarly, in **rule_beta_value**, where **y** is the abtraction
+- Similarly, in **rule_beta_value**, where **y** is the abstraction
   argument to the application, if **y**'s reference count after beta
   reduction is 0 we can garbage-collect its body, leaving a placeholder.
   We can't garbage-collect **y** itself since it appears at an arbitrary
