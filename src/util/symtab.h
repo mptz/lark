@@ -26,6 +26,7 @@ typedef unsigned symbol_mt;
 extern symbol_mt the_empty_symbol;
 
 extern void symtab_dump(void);
+extern symbol_mt symtab_fresh(symbol_mt prefix);
 extern symbol_mt symtab_gensym(void);
 extern symbol_mt symtab_intern(const char *name);
 extern const char *symtab_lookup(symbol_mt s);

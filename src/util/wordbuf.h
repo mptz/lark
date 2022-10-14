@@ -45,7 +45,11 @@ wordbuf_clear(struct wordbuf *buf)
 	{ buf->used = 0; }
 
 static inline void
-wordbuf_pushback(struct wordbuf *buf, word word)
+wordbuf_pop(struct wordbuf *buf)
+	{ if (buf->used) buf->used--; }
+
+static inline void
+wordbuf_push(struct wordbuf *buf, word word)
 {
 	if (buf->used < buf->capacity)
 		buf->data[buf->used++] = word;

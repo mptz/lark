@@ -50,7 +50,7 @@ CONFIG_CFLAGS := -g -fprofile-arcs -ftest-coverage
 CONFIG_DEFINES := DEBUG
 CONFIG_LDFLAGS := -fprofile-arcs
 else ifeq ($(CONFIG),optimize)
-CONFIG_CFLAGS := -O3 -fomit-frame-pointer -fstrength-reduce -fstrict-aliasing
+CONFIG_CFLAGS := -O3 -fomit-frame-pointer -fivopts -fno-strict-aliasing
 CONFIG_DEFINES := NDEBUG
 else
 CONFIG_CFLAGS := -g
@@ -59,7 +59,10 @@ CONFIG_LDFLAGS := -rdynamic
 endif
 
 DEFINES := $(CONFIG_DEFINES) _GNU_SOURCE _FILE_OFFSET_BITS=64
-CWARN := -Wall -Wno-trigraphs -Wpointer-arith
+# Gradually building towards a clean compile with -Wextra; here are the
+# extra options enabled so far:
+CWARNEXTRA := -Wcast-function-type -Wempty-body -Wignored-qualifiers -Wmissing-parameter-type -Wold-style-declaration -Wshift-negative-value -Wtype-limits
+CWARN := -Wall $(CWARNEXTRA) -Wcast-align -Wno-trigraphs -Wpointer-arith -Wstrict-prototypes -Wundef
 CFLAGS := $(CFLAVOR) $(CWARN) $(CONFIG_CFLAGS) $(addprefix -D,$(DEFINES)) -I./src
 LDFLAGS := -g $(CONFIG_LDFLAGS)
 
@@ -77,7 +80,7 @@ PATH := $(shell pwd)/bin:$(PATH)
 # modules by generating subdir Makefiles from m4 templates, then including
 # them.
 
-all-subdir-names := calc lc util vpu
+all-subdir-names := calc lc slc util vpu
 all-subdirs := $(patsubst %,src/%/,$(sort $(all-subdir-names)))
 
 # The key variables which are populated as we bring in modules.
@@ -126,8 +129,10 @@ build: $(addsuffix @build,$(all-modules))
 nop: ;
 
 # Conveniences build targets for commonly built subdirectories.
-.PHONY: calc util vpu
+.PHONY: calc lc slc util vpu
 calc: src/calc/@build
+lc: src/lc/@build
+slc: src/slc/@build
 util: src/util/@build
 vpu: src/vpu/@build
 

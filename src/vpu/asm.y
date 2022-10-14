@@ -165,7 +165,7 @@ static void
 assemble(opcode opcode, unsigned arg1, unsigned arg2)
 {
 	word i = insn_code2index(opcode | (arg1 << 16) | (arg2 << 24));
-	wordbuf_pushback(&codewords, i);
+	wordbuf_push(&codewords, i);
 }
 
 static int
@@ -190,8 +190,8 @@ backpatch(void)
 static void
 fixout(word word)
 {
-	wordbuf_pushback(&fixups, wordbuf_used(&codewords));
-	wordbuf_pushback(&codewords, word);
+	wordbuf_push(&fixups, wordbuf_used(&codewords));
+	wordbuf_push(&codewords, word);
 }
 
 static void
@@ -214,16 +214,16 @@ labelref(symbol_mt sym)
 		bp->pos = wordbuf_used(&codewords);
 		bp->sym = sym;
 		backpatches = bp;
-		wordbuf_pushback(&codewords, 0);
+		wordbuf_push(&codewords, 0);
 	} else {
 		offset pos = wordbuf_used(&codewords),
 		       off = ((word) ref) - pos;
-		wordbuf_pushback(&codewords, off);
+		wordbuf_push(&codewords, off);
 	}
 }
 
 static void
 wordout(word word)
 {
-	wordbuf_pushback(&codewords, word);
+	wordbuf_push(&codewords, word);
 }

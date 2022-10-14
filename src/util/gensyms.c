@@ -24,12 +24,32 @@
 
 #include "symtab.h"
 
+#define NUMSYMS 100
+#define NUMFRESH 5
+
 int main(int argc, char *argv[])
 {
 	symtab_intern("unused");	/* initialize */
-	while (1) {
+	symtab_intern("genC");		/* ensure skipped */
+	for (int i = NUMSYMS; i--; /* nada */) {
+		symbol_mt sym = symtab_gensym();
+		puts(symtab_lookup(sym));
+		symtab_intern("genAB");		/* ensure skipped */
+	}
+	symbol_mt x = symtab_intern("x");
+	for (int i = NUMFRESH; i--; /* nada */) {
+		symbol_mt fresh = symtab_fresh(x);
+		puts(symtab_lookup(fresh));
+	}
+	symbol_mt xAq = symtab_intern("xAq");	/* prev. output */
+	for (int i = NUMFRESH; i--; /* nada */) {
+		symbol_mt fresh = symtab_fresh(xAq);
+		puts(symtab_lookup(fresh));
+	}
+	for (int i = NUMSYMS; i--; /* nada */) {
 		symbol_mt sym = symtab_gensym();
 		puts(symtab_lookup(sym));
 	}
+
 	return 0;
 }
