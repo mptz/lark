@@ -21,8 +21,6 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
-#include <assert.h>
-
 #include "alloc.h"
 #include "lc.h"
 #include "lc.lex.h"
@@ -30,6 +28,14 @@
 #include "term.h"
 
 #define YY_NO_INPUT
+
+/*
+ * This is a terrible hack required (AFACT) to compile on older versions
+ * of GNU Bison (confirmed with 3.5.1) which don't include the standard
+ * internal tokens like YYEOF, YYerror, and YYUNDEF in the .tab.h header
+ * file.  As far as I know these tokens always have the same values.
+ */
+#define YYerror 256
 
 %}
 
@@ -74,7 +80,7 @@ _		return '_';
 
 .	{
 		fprintf(stderr, "Scan error: '%s'\n", yytext);
-		return TOKEN_SCAN_ERROR;
+		return YYerror;
 	}
 
 %%
