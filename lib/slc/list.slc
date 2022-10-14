@@ -1,0 +1,13 @@
+; List operations
+cons	:= \x y f. f x y
+car	:= \p. p true
+cdr	:= \p. p false
+nil	:= \_. true
+nullp	:= \p. p (\_ _. false)
+
+; A list-based predecessor with better performance than other approaches
+phi	:= \x. cons (cdr x) (succ (cdr x))
+pred	:= \n. car (n phi (cons zero zero))
+sub	:= \m n. n pred m
+leq	:= \m n. zerop (sub m n)
+lt	:= \m n. not (zerop (sub n m))

@@ -1,0 +1,5 @@
+div six three
+mod seven four
+divmod five two
+car (divmod ten three)
+cdr (divmod nine four)

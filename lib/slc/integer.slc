@@ -1,0 +1,72 @@
+; Basic operations on integers
+; The sign function 's' represents the sign bit
+; The sign function is only applied to negative numbers
+z0	:= \_. zero
+z1	:= \_. one
+z-1	:= \s f x. s (f x)
+
+; Conversion between N and Z
+; z2n returns the natural number which is the input's absolute value.
+; abs is the absolute value in type Z -> Z.
+; n2zinv given n returns the negative integer -n.
+; absinv is the negative absolute value in type Z -> Z.
+n2z	:= \n _. n
+n2zinv	:= \n s f x. s (n f x)
+z2n	:= \i. i id
+abs	:= \i. n2z (z2n i)
+absinv	:= \i. n2zinv (z2n i)
+
+; Three-way branch yielding p, z, or n depending on whether i is positive,
+; zero, or negative, respectively.  branch is just a different arg order.
+signum	:= \p z n i. i (\_. n) (\_. p) z
+branch	:= \i p z n. i (\_. n) (\_. p) z
+
+z0p	:= signum false true false
+negp	:= signum false false true
+posp	:= signum true false false
+
+zinv	:= \i. branch i (absinv i) i (abs i)
+zsucc	:= \i. branch i (n2z (succ (z2n i))) z1 (zinv (n2z (pred (z2n i))))
+
+zadd	:= \i j. branch i (branch j (n2z (add (z2n i) (z2n j)))		\
+				    i					\
+				    (z2n i zsucc j))			\
+			  j						\
+			  (branch j (z2n j zsucc i)			\
+				    i					\
+				    (n2zinv (add (z2n i) (z2n j))))
+
+zsub	:= \i j. zadd i (zinv j)
+zeq	:= \i j. z0p (zsub i j)
+zlt	:= \i j. negp (zsub i j)
+zgt	:= \i j. posp (zsub i j)
+zlte	:= \i j. signum false true true (zsub i j)
+zgte	:= \i j. signum true true false (zsub i j)
+
+zk0	:= \_. z0
+zscmp	:= \i j. branch i (branch j n2z zk0 n2zinv)	\
+			  zk0				\
+			  (branch j n2zinv zk0 n2z)
+zmult	:= \i j. zscmp i j (mult (z2n i) (z2n j))
+zdiv	:= \i j. zscmp i j (div  (z2n i) (z2n j))
+
+; Define more numbers, just for convenience
+z2	:= \_ f x. f (f x)
+z3	:= \_ f x. f (f (f x))
+z4	:= \_ f x. f (f (f (f x)))
+z5	:= \_ f x. f (f (f (f (f x))))
+z6	:= \_ f x. f (f (f (f (f (f x)))))
+z7	:= \_ f x. f (f (f (f (f (f (f x))))))
+z8	:= \_ f x. f (f (f (f (f (f (f (f x)))))))
+z9	:= \_ f x. f (f (f (f (f (f (f (f (f x))))))))
+z10	:= \_ f x. f (f (f (f (f (f (f (f (f (f x)))))))))
+
+z-2	:= \s f x. s (f (f x))
+z-3	:= \s f x. s (f (f (f x)))
+z-4	:= \s f x. s (f (f (f (f x))))
+z-5	:= \s f x. s (f (f (f (f (f x)))))
+z-6	:= \s f x. s (f (f (f (f (f (f x))))))
+z-7	:= \s f x. s (f (f (f (f (f (f (f x)))))))
+z-8	:= \s f x. s (f (f (f (f (f (f (f (f x))))))))
+z-9	:= \s f x. s (f (f (f (f (f (f (f (f (f x)))))))))
+z-10	:= \s f x. s (f (f (f (f (f (f (f (f (f (f x))))))))))

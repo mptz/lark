@@ -1,0 +1,7 @@
+#include "logic.slc"
+#include "church.slc"
+#include "list.slc"
+#include "triple.slc"
+#include "div.slc"
+#include "integer.slc"
+#include "ski.slc"

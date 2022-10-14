@@ -1,0 +1,12 @@
+#echo "Testing closed triples"
+triple	:= cons3 eight (cons five two) three
+trip1 triple
+car (trip2 triple)
+cdr (trip2 triple)
+trip3 triple
+
+#echo "Testing open triples"
+ducklings	:= cons3 huey dewey louie 
+trip1 ducklings
+trip2 ducklings
+trip3 ducklings

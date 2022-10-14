@@ -1,0 +1,9 @@
+; Combinators for SKI combinatorial logic
+I := \x. x
+K := \x _. x
+S := \x y z. (x z) (y z)
+
+; Combinators from Haskell Curry's B, C, K, W system
+B := \x y z. x (y z)
+C := \x y z. x z y
+W := \x y. x y y

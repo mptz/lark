@@ -1,0 +1,9 @@
+id three
+id id
+id apple
+and true true
+and true false
+or true false
+or false false
+not (and true true)
+not (or false false)
