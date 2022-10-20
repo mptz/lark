@@ -81,9 +81,10 @@ void print_eval_stats(void)
  * (1) no beta redexes (applications whose functions are abstractions);
  * (2) no values (abstractions) hidden behind renames.
  *
- * Note that our detection of beta redexes relies on a lack of renaming
- * chains, since we look to a fixed depth of 1 to preserve O(1) operation.
- * Therefore a failure of #2 will likely lead to a failure of #1.
+ * Note that detection of beta redexes during reduction relies on a lack
+ * of renaming chains, since we look to a fixed depth of 1 to preserve
+ * O(1) operation.  Therefore a failure of #2 will likely lead to a
+ * failure of #1.
  *
  * Additionally sanity-check depths.
  */
@@ -169,8 +170,8 @@ static void trace_eval(enum eval_dir dir, unsigned depth,
  */
 struct node *reduce(struct node *headl)
 {
-	struct node *headr = NULL, *outer = NULL,
-		    *prev, *x, *y;
+	struct node *headr = NULL, *outer = NULL,	/* reduction state */
+		    *x, *y;				/* temporaries */
 	unsigned depth = 0;
 
 	the_eval_stats.reduce_start++;
@@ -247,10 +248,10 @@ rule_move_left:
 	 * the pointer to the left.
 	 */
 	if (EVAL_STATS) the_eval_stats.rule_move_left++;
-	prev = headl->prev;
+	x = headl->prev;
 	headl->prev = headr;
 	headr = headl;
-	headl = prev;
+	headl = x;
 	goto eval_rl;
 
 rule_beta_value:
@@ -329,7 +330,7 @@ rule_beta_inert:
 	 *	  in R-to-L traversal now and are inserting the newly
 	 *	  allocated node to the right of current position.
 	 *	- Though reference count is 0 initially, it will be
-	 *	  incremented by each substitution of y in beta().
+	 *	  incremented by each substitution of y in beta_reduce().
 	 */
 	y = headl->bits & NODE_RHS_BOUND ?
 		NodeBoundVar(headr, depth, headl->rhs.index) :
@@ -359,7 +360,7 @@ rule_rename:
 	 *                (headl)
 	 *                   |
 	 *        +---------+|   +---------+
-                  |         ||   |         |
+         *        |         ||   |         |
 	 *        |         VV   |         V
 	 *  [@X subst] ... [@Y subst] ... [@Z <anything>]
 	 *   ^              ^ backref          backref
@@ -368,10 +369,11 @@ rule_rename:
 	 *                  |                     |
 	 *                  +---------------------+
 	 *
-	 * After:
+	 *           (headl)
+	 * After:       |
 	 *        +------------------------+
-                  |                        |
-	 *        |                        V
+         *        |     |                  |
+	 *        |     V                  V
 	 *  [@X subst] ... [@Y subst] ... [@Z <anything>]
 	 *   ^              (freed)            backref
 	 *   |                                    | 
@@ -425,10 +427,10 @@ rule_move_right:
 	 * Move right without taking any other action.
 	 */
 	if (EVAL_STATS) the_eval_stats.rule_move_right++;
-	prev = headr->prev;
+	x = headr->prev;
 	headr->prev = headl;
 	headl = headr;
-	headr = prev;
+	headr = x;
 	goto eval_lr;
 
 rule_enter_abs:
@@ -458,7 +460,7 @@ rule_exit_abs:
 	 *
 	 * Note that instead of restoring outer's headl and outer to
 	 * headl and headr (as they were when we saved them) we move
-	 * right since we're done handling this ES.  This step thus
+	 * right since we're done handling this node.  This step thus
 	 * combines the pop and an equivalent of rule_move_right.
 	 */
 	if (EVAL_STATS) the_eval_stats.rule_exit_abs++;
@@ -480,9 +482,9 @@ rule_collect:
 	if (EVAL_STATS) the_eval_stats.rule_collect++;
 	assert(headr->nref == 0);
 	assert(headl != NULL);
-	prev = headr->prev;
+	x = headr->prev;
 	node_free(headr);
-	headr = prev;
+	headr = x;
 	goto eval_lr;
 
 done:

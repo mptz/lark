@@ -196,15 +196,15 @@ struct node *crumble(struct term *term)
  * we need to track the boundary between variables which were bound
  * in the tree being copied--as we have also copied their binders,
  * we don't need to adjust their indexes--and variables which were
- * free outside the tree being copied, which must be shifted.  The
- * 'cutoff' variable, which increases as we enter abstractions,
- * performs this role.
+ * free in the tree being copied, which must be shifted.  The 'cutoff'
+ * variable, which increases as we enter abstractions, performs this
+ * role.
  *
- * A slight complication here is that our copies are nested--at any
- * point we can encounter node which points upwards--so we build
- * a linked list of cutoffs and 'deltas' for shifting, allowing us
- * to map a bound variable back through all nested copies to the
- * index it should hold in the tree we're constructing.
+ * A slight complication is that our copies are nested--at any point
+ * we can encounter a node which points upwards--so we build a linked
+ * list of cutoffs and 'deltas' for shifting, allowing us to map a
+ * bound variable back through all nested copies to the index it
+ * should hold in the tree we're constructing.
  */
 
 struct context {

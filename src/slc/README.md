@@ -49,8 +49,8 @@ Optimizations
 SLC also implements a few optimizations not mentioned in the paper or its
 reference implementation.  One of the SCAM's drawbacks is its deferral of
 all garbage collection until completion of the R-to-L traversal, i.e.
-until weak (not under abstractions) has completed.  I've added three
-additional GC sites (in **reduce**, `reduce.c`).
+until weak (not under abstractions) reduction has completed.  I've added
+three additional GC sites (in **reduce**, `reduce.c`).
 
 * In **rule_beta_inert**, if the reference count of **y** (the sharing
   node allocated to reference the application's argument) after beta

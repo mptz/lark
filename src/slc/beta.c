@@ -170,9 +170,8 @@ static struct node *copy_node(struct node *prev, struct node *src,
 	assert(src->bits & NODE_LHS_SUBST);
 
 	/*
-	 * We need to allocate the copy first w/NULL referent because
-	 * we need to pass its lhs to copy_subst for backreferencing
-	 * if necessary.
+	 * We allocate the copy first w/NULL referent so we can pass
+	 * its lhs to copy_subst for backreferencing if necessary.
 	 */
 	struct node *copy = NodeSubst(prev, depth, NULL);
 	copy_subst(&copy->lhs, src->lhs);
@@ -363,7 +362,7 @@ static struct node *subst_node_rl(struct node *src, int var,
 		 * other than 'src' is when we were passed a single-node
 		 * environment at the outermost level (var == 0), in
 		 * which case we have just freed 'src' and need to return
-		 * its replaclement, 'redex', instead.
+		 * its replacement, 'redex', instead.
 		 */
 		if (src == curr) return subst->redex;
 	}

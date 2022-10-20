@@ -31,7 +31,7 @@
 
 /*
  * We could easily make the heap more dynamic, but as SLC is meant as a
- * prototype/proof of concept, it's not clear it's worth yet (yet).
+ * prototype/proof of concept, it's not clear it's worth it (yet).
  */
 #define MAX_NODES 1000000
 

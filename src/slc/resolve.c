@@ -119,7 +119,7 @@ static int context_lookup(const struct context *context, symbol_mt name)
 }
 
 /*
- * form_convert, as its name suggestions converts forms to terms.  It
+ * form_convert, as its name suggests, converts forms to terms.  It
  * determines which variables are free vs. bound, extending the global
  * environment as necessary.  It doesn't perform any substitutions of
  * global definitions, however; it simply gathers the environment
