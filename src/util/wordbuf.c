@@ -78,3 +78,10 @@ wordbuf_free_clear(struct wordbuf *buf)
 		free((void*) buf->data[i]);
 	wordbuf_clear(buf);
 }
+
+void
+wordbuf_popn(struct wordbuf *buf, size_t n)
+{
+	assert(n <= buf->used);
+	buf->used -= n;
+}

@@ -35,6 +35,7 @@ extern void wordbuf_init(struct wordbuf *buf);
 extern void wordbuf_fini(struct wordbuf *buf);
 extern void wordbuf_append(struct wordbuf *buf, const word *data, size_t count);
 extern void wordbuf_free_clear(struct wordbuf *buf);
+extern void wordbuf_popn(struct wordbuf *buf, size_t n);
 
 static inline word
 wordbuf_at(const struct wordbuf *buf, size_t index)
