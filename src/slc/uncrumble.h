@@ -1,5 +1,5 @@
-#ifndef LARK_SLC_CRUMBLE_H
-#define LARK_SLC_CRUMBLE_H
+#ifndef LARK_SLC_UNCRUMBLE_H
+#define LARK_SLC_UNCRUMBLE_H
 /*
  * Copyright (c) 2009-2022 Michael P. Touloumtzis.
  *
@@ -25,6 +25,6 @@
 struct node;
 struct term;
 
-extern struct node *crumble(struct term *term);
+extern struct term *uncrumble(const struct node *node);
 
-#endif /* LARK_SLC_CRUMBLE_H */
+#endif /* LARK_SLC_UNCRUMBLE_H */

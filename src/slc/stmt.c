@@ -39,6 +39,7 @@
 #include "slc.h"
 #include "stmt.h"
 #include "term.h"
+#include "uncrumble.h"
 
 void stmt_define(symbol_mt name, struct form *form)
 {
