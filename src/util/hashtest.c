@@ -3942,7 +3942,7 @@ static void run_dict_test(void)
 	}
 	--nwords;	/* we started at 1 */
 
-	if (fclose(input))
+	if (pclose(input))
 		ppanic(cmd);
 
 	/*
