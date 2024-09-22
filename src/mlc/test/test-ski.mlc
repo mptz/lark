@@ -1,0 +1,30 @@
+#echo "Testing S, K, I combinators"
+I (seven)
+K (six) (three)
+
+|* K is true, S K is false, and postfix (K; S) K is not
+|*          = K; S
+K
+K; S
+true (K; S) (K)
+false (K; S) (K)
+
+|* These expressions reduce to I, S, K respectively
+S (K) (I) (K (I) (S))
+K (S) (I (S (K) (S) (I)))
+S (K) (I) (K)
+
+#echo "Testing B, C, W combinators"
+|* Pairs of lines reduce to identical normal forms
+B
+S (S; K) (K)
+C
+S (S (K (S (S; K) (K))) (S)) (K; K)
+W
+S (S) (K; S)
+I
+W (K)
+|* These three have identical normal forms
+S
+B (B (W; B) (C)) (B; B)
+B (W; B) (B (B) (C))

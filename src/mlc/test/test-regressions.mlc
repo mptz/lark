@@ -1,0 +1,39 @@
+|* This gets stuck in the ML implementation which accompanied the paper
+|* since the rename rule filters on Shared and Var cells and so doesn't
+|* consider renames pointing to abstractions, which are critical.  Thus
+|* a rename pointing to an abstraction gets skipped, the abstraction is
+|* hidden behind a rename & is invisible to the beta-reduction steps,
+|* and we complete the R-to-L traversal with intact beta redexes.
+[x? x] ([y? y]) (v)
+
+|* This is the term which alerted me to the fact that the the paper's
+|* handling of bound variables in alpha conversion was erronous--they're
+|* not alpha-converted so we end up with inadvertant capture.  That's
+|* what set me down the road of addinug De Bruijn indexes alongside
+|* memory-address-based free variables and explicit substitution nodes.
+S (K (S)) (K)
+
+|* These are all cases which broke at some point along the way while
+|* I was struggling to get De Bruijn index shifting logic correct.
+div (six, two)
+pred-primitive (one)
+divmod (five, two)
+cube (one)
+pow (one, one)
+
+|* And these are cases which broke when I was converting from ES/bites
+|* to nodes
+sub (two, one)
+
+|* This case broke when I added arity; it actually revealed an existing
+|* bug in uncrumbling (using unshifted rather than shifted index for
+|* name lookups) which happened to be easier to trigger with arity.
+shifted-index-case := [m, n? cons (m, n)]
+shifted-index-case
+
+|* After implementing primitives, this broke a depth check in uncrumble
+|* (sometimes) and also surfaced a refcount assertion (sometimes).  I was
+|* able to track down this inconsistent error to an erroneous reference
+|* count decrement in the implementation of the '+' primitive which was
+|* causing a number node to be gc'd while still in use.
+[x? [y? x + y]] (5)

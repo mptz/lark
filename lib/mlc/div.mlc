@@ -1,0 +1,34 @@
+|* Non-recursive division.  Inspired by Oleg Kiselyov's integer division.
+|* Compared to Oleg's, my approach is functionalized; rather than use a
+|* flag to determine when iterative division is complete, I encode that
+|* information in the state transition function.
+|*
+|* This approach uses the dividend as a Church numeral, instead of using
+|* general recursion via a fixed-point combinator.  This approach is more
+|* consistent with the other arithmetic operations, and is not significantly
+|* slower than a Y combinator version, as most of the time is spend in the
+|* subtraction and comparison reductions during the actual division process.
+
+|* One iterative step of the division.  Parameterized by divisor; given
+|* the current state.  The state is a 3-triple whose first element is
+|* the transition function to be used to calculate the next step given
+|* the entire state, including the transition function.
+|*
+|* While dividing, state is (divide step function, subtrahend, accumulator).
+|* Equilibrium state is (identity function, remainder, quotient).
+|*
+divstep	:= [d? [s? [c? [a? (lt (c, d))					\
+			(cons3 (id, c, a))				\
+			(cons3 (s; trip1, sub (c, d), a; succ))]]	\
+		 (s; trip2) (s; trip3)]]
+
+|* Return a triple whose 2nd and 3rd values are remainder and quotient.
+|* Accomplished by applying 'divstep' m times, where m is the dividend.
+|* XXX the parentheses around [s? s; (s; trip1)] are necessary;
+|* without them the code parses and runs but doesn't normalize as
+|* intended. XXX a hole in the parser.
+divcore	:= [m, n? m ([s? s; (s; trip1)]) (cons3 (n; divstep, m, zero))]
+
+div	:= [m, n? divcore (m, n); trip3]
+mod	:= [m, n? divcore (m, n); trip2]
+divmod	:= [m, n? divcore (m, n); ([t? cons (t; trip3, t; trip2)])]

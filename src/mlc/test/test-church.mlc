@@ -1,0 +1,68 @@
+#echo "Testing zero, succ, zerop"
+zerop (zero)
+zerop (one)
+zerop (seven)
+succ (zero)
+succ (one)
+succ (seven)
+succ (zero); zerop
+succ (zero); zerop; not
+
+#echo "Testing add"
+add (zero, zero)
+add (zero, one)
+add (one, zero)
+add (zero, five)
+add (five, zero)
+add (one, one)
+add (four, five)
+
+#echo "Testing mult"
+mult (zero, zero)
+mult (zero, four)
+mult (four, zero)
+mult (one, one)
+mult (one, six)
+mult (six, one)
+mult (five, six)
+mult (ten, ten)
+
+#echo "Testing square and cube"
+square (zero)
+square (one)
+square (three)
+square (six)
+cube (zero)
+cube (one)
+cube (three)
+cube (six)
+
+#echo "Testing pow"
+|* Note pow (n, zero) (including the case for n == zero, which doesn't have
+|* a mathematically well-defined outcome) yields id = \x. x = (\ 0), which
+|* is eta-equivalent to one = \f x. f x = (\ (\ (1 0)).  Since my readback
+|* for Church numerals doesn't work modulo eta equivalence, I'm leaving
+|* those test cases out.  However, we can recover standard Church numerals
+|* via addition.
+add (pow (zero, zero), three)
+add (two, pow (five, zero))
+pow (zero, one)
+pow (six, one)
+pow (two, five)
+pow (four, four)
+
+#echo "Testing primitive pred and sub"
+pred-primitive (one)
+pred-primitive (five)
+sub-primitive (four, four)
+sub-primitive (three, two)
+sub-primitive (five, two)
+sub-primitive (seven, six)
+
+#echo "Testing addition-based pred and sub"
+pred-addition (one)
+pred-addition (five)
+sub-addition (four, four)
+sub-addition (three, two)
+sub-addition (five, two)
+sub-addition (seven, six)

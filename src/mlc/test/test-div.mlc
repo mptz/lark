@@ -1,0 +1,5 @@
+div (six, three)
+mod (seven, four)
+divmod (five, two)
+divmod (ten, three); car
+divmod (nine, four); cdr

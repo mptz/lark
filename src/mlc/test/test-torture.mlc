@@ -1,0 +1,17 @@
+|* Hard-to-reduce terms of various flavors.
+
+|* Church numerals -> a big number
+[f? [x? x; (three; three; three) (f)]]
+
+|* Tricky open term
+D := [x? x; x]
+F := [f? y; f; f]
+I; F; D
+
+|* Asperti & Guerrini p.12, reduces to I
+AG12-R := [g? I; g; g]
+AG12-S := [h? I; h; AG12-R]; AG12-R
+AG12-S
+
+|* Asperti & Guerrini p.19, reduces to a in exponential time
+a; (seven; seven) (I)

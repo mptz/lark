@@ -1,0 +1,5 @@
+|* Triple operations
+cons3	:= [x, y, z? [f? f (x, y, z)]]
+trip1	:= [t? [x, _, _? x]; t]
+trip2	:= [t? [_, y, _? y]; t]
+trip3	:= [t? [_, _, z? z]; t]

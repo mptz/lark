@@ -1,0 +1,19 @@
+|* List operations
+cons	:= [x, y? [f? y; f (x)]]
+car	:= [p? true; p]
+cdr	:= [p? false; p]
+nil	:= [_? true]
+nullp	:= [p? [_? [_? false]]; p]
+
+|* A list-based predecessor with better performance than other approaches
+phi	:= [x? cons (x; cdr, x; cdr; succ)]
+pred	:= [n? cons (zero, zero); n (phi); car]
+sub	:= [m, n? m; n (pred)]
+leq	:= [m, n? sub (m, n); zerop]
+lt	:= [m, n? sub (n, m); zerop; not]
+
+|* List length.  This uses the Church-encoding nullp above; it would be
+|* simplified by use of a nullp that returns 0 or 1.
+length-step := [self, list, accum? \
+	[(list; nullp) (1) (0).	accum | self (self, cdr (list), accum + 1)]]
+length := [list? length-step (length-step, list, 0)]

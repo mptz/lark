@@ -80,7 +80,7 @@ PATH := $(shell pwd)/bin:$(PATH)
 # modules by generating subdir Makefiles from m4 templates, then including
 # them.
 
-all-src-names := calc lc slc util vpu
+all-src-names := calc lc mlc slc util vpu
 all-doc-names := 
 all-subdirs := $(patsubst %,src/%/,$(sort $(all-src-names))) \
 	       $(patsubst %,doc/%/,$(sort $(all-doc-names))) 
@@ -137,9 +137,10 @@ build: $(all-build-targets)
 nop: ;
 
 # Conveniences build targets for commonly built subdirectories.
-.PHONY: calc lc slc util vpu
+.PHONY: calc lc mlc slc util vpu
 calc: src/calc/@build
 lc: src/lc/@build
+mlc: src/mlc/@build
 slc: src/slc/@build
 util: src/util/@build
 vpu: src/vpu/@build
