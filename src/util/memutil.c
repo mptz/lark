@@ -31,6 +31,7 @@ static char out_of_memory[] = "Virtual memory exhausted\n";
 
 void *xmalloc(size_t size)
 {
+	if (!size) return NULL;	/* allowed but not required by standard */
 	void *value = malloc(size);
 	if (!value) panic(out_of_memory);
 	return value;
