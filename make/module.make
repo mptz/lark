@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2001 Michael P. Touloumtzis.
+# Copyright (c) 2001-2022 Michael P. Touloumtzis.
 #
 # Permission is hereby granted, free of charge, to any person obtaining a
 # copy of this software and associated documentation files (the "Software"),
@@ -60,6 +60,7 @@ module-c-srcs-$(module) := $(filter %.c,$(module-srcs-path)) \
 			$(module-gperf-srcs-$(module):.gperf=.c) \
 			$(module-lex-srcs-$(module):.l=.lex.c) \
 			$(module-yacc-srcs-$(module):.y=.tab.c)
+module-tex-srcs-$(module) := $(filter %.tex,$(module-srcs-path))
 
 #
 # Handle source files built by tools (like gperf).  Some of these tools
@@ -71,12 +72,13 @@ module-c-srcs-$(module) := $(filter %.c,$(module-srcs-path)) \
 secondary-srcs :=
 
 #
-# Other generated C files for the secondary list.
+# Other generated C and TeX files for the secondary list.
 #
 secondary-srcs += $(module-gperf-srcs-$(module):.gperf=.c) \
 		$(module-lex-srcs-$(module):.l=.lex.c) \
 		$(module-yacc-srcs-$(module):.y=.tab.h) \
-		$(module-yacc-srcs-$(module):.y=.tab.c)
+		$(module-yacc-srcs-$(module):.y=.tab.c) \
+		$(module-tex-srcs-$(module):.tex=.log)
 
 #
 # Set up the generated files lists.  We only build dependencies from C
@@ -84,7 +86,8 @@ secondary-srcs += $(module-gperf-srcs-$(module):.gperf=.c) \
 #
 module-deps-$(module) := $(module-c-srcs-$(module):.c=.d)
 module-objs-$(module) := $(module-c-srcs-$(module):.c=.o) \
-	$(module-c-srcs-$(module):.c=.lo)
+	$(module-c-srcs-$(module):.c=.lo) \
+	$(module-tex-srcs-$(module):.tex=.dvi)
 ifeq ($(CONFIG),coverage)
 module-objs-$(module) += $(module-c-srcs-$(module):.c=.gcda) \
 	$(module-c-srcs-$(module):.c=.gcno)
@@ -123,12 +126,12 @@ $(module-objs-$(module)): $(filter %.h,$(secondary-srcs))
 
 #
 # Set up the various clean targets.  This uses target-specific variables
-# called 'clean-*' on each of the module's clean, distclean, and scrub
-# targets.
+# called 'clean-*' on each of the module's *clean targets.
 #
 .SECONDARY: $(secondary-srcs)
 clean-files :=
 clean-subdirs :=
+$(subdir)@clean: $(subdir)@testclean
 $(subdir)@clean: clean-files := $(clean-files) $(module-target-path) \
 	$(module-objs-$(module))
 $(subdir)@clean: clean-subdirs := $(subdir).libs
@@ -147,5 +150,5 @@ subdir-deps += $(module-deps-$(module))
 # Update global, top-level Makefile variables.
 # XXX should move to per-directory!
 #
-all-srcs += $(module-c-srcs-$(module))
+all-srcs += $(module-c-srcs-$(module)) $(module-tex-srcs-$(module))
 all-objs += $(module-objs-$(module))

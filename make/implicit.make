@@ -1,7 +1,7 @@
 #
 # Project-specific implicit rules for builds.
 #
-# Copyright (c) 2001-2018 Michael P. Touloumtzis.
+# Copyright (c) 2001-2022 Michael P. Touloumtzis.
 #
 # Permission is hereby granted, free of charge, to any person obtaining a
 # copy of this software and associated documentation files (the "Software"),
@@ -66,7 +66,7 @@ YACC := bison
 
 %.c: %.y
 %.tab.c %.tab.h: %.y
-	$(YACC) $(YFLAGS) -d -p $(notdir $(<:.y=_yy)) -t $< -o $(<:.y=.tab.c)
+	$(YACC) $(YFLAGS) -Wall -Werror -d -p $(notdir $(<:.y=_yy)) -t $< -o $(<:.y=.tab.c)
 
 #
 # As above, for flex (lex) generated files.
@@ -75,7 +75,6 @@ LEX := flex
 
 #
 # Flex options:
-#
 # -s	: suppress default rule (which copies unrecognized text to stdout)
 #
 # Actually, not using this option b/c the catch-all rules I use (which I
@@ -86,6 +85,20 @@ LEX := flex
 %.c: %.l
 %.lex.c: %.l
 	$(LEX) $(LFLAGS) -P$(notdir $(<:.l=_yy)) -o$@ $<
+
+#
+# And for TeX.
+#
+TEX := tex
+TEXFLAGS := -interaction nonstopmode
+
+%.dvi: %.tex
+	$(TEX) $(TEXFLAGS) -output-directory $(dir $<) $<
+
+DVIPDF := dvipdf
+
+%.pdf: %.dvi
+	$(DVIPDF) $(DVIPDFFLAGS) $< $@
 
 #
 # Rules for test outputs; our test infrastructure revolves around capturing

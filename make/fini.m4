@@ -54,13 +54,13 @@ d :=
 # don't know which tests map to which modules--so we associate test runs
 # with the subdir-level @test target.
 
-testrefs := $(sort $(wildcard $(subdir)test/*.ref))
-testresults := $(testrefs:.ref=.runout) $(testrefs:.ref=.runerr)
-.SECONDARY: $(testresults)
-$(subdir)@clean: clean-files += $(testresults)
-$(subdir)@test: $(testrefs:.ref=.diff)
-testrefs :=
-testresults :=
+test-refs := $(sort $(wildcard $(subdir)test/*.ref))
+test-results := $(test-refs:.ref=.runout) $(test-refs:.ref=.runerr)
+.SECONDARY: $(test-results)
+$(subdir)@testclean: clean-files := $(clean-files) $(test-results)
+$(subdir)@test: $(test-refs:.ref=.diff)
+test-refs :=
+test-results :=
 
 # Subdir-specific implicit rule; we can't add a global implicit rule
 # because the target's path contains 'test' whereas we're looking in

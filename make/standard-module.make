@@ -1,7 +1,7 @@
 #
 # standard-module.make: rules for standard module types.
 #
-# Copyright (c) 2001-2007 Mike Touloumtzis.
+# Copyright (c) 2001-2022 Mike Touloumtzis.
 #
 # Permission is hereby granted, free of charge, to any person obtaining a
 # copy of this software and associated documentation files (the "Software"),
@@ -82,6 +82,15 @@ endif
 #
 ifeq ($(module-type),test)
 include make/test-module.make
+include make/unmodule.make
+endif
+
+# Right now PDF targets are 1:1 with TeX inputs, but at some point we'll
+# want to merge multiple chapters/sections into e.g. a book.
+#
+ifeq ($(module-type),document)
+include make/module.make
+$(module-target-path): $(module-objs-$(module))
 include make/unmodule.make
 endif
 

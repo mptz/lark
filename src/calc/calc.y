@@ -53,7 +53,8 @@ static int calc_yyerror(const char *s);
 
 %left '+' '-'
 %left '*' '/' '%'
-%nonassoc '!' CMP
+%precedence '!'
+%token CMP
 
 %type <n> nexpr
 %type <z> zexpr
@@ -61,7 +62,7 @@ static int calc_yyerror(const char *s);
 
 %%
 
-input	: /* empty */	{ fputs(  "> ", stdout); fflush(stdout); }
+input	: %empty	{ fputs(  "> ", stdout); fflush(stdout); }
 	| input line	{ fputs("\n> ", stdout); fflush(stdout); }
 	;
 

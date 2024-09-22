@@ -103,6 +103,14 @@ module-type := test
 include make/standard-module.make
 ')
 
+m4_define(`make_document',
+`# m4 macro: $0
+module-target := $1.pdf
+module-srcs := m4_backslashed($2)
+module-type := document
+include make/standard-module.make
+')
+
 m4_divert`'m4_dnl
 # this is a generated file; do not edit!
 
