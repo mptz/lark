@@ -255,12 +255,8 @@ static struct term *uncrumble_slot(unsigned bits, union slot slot,
 		return NULL;
 	if (bits & NODE_LHS_BOUND) {
 		shift->cutoff = cutoff;
-		/*
-		 * XXX I believe this is a bug... name_lookup should
-		 * use the shifted index, not the raw index.
-		 */
-		return TermBoundVar(shift_index(slot.index, shift),
-				    name_lookup(slot.index, context));
+		int shifted = shift_index(slot.index, shift);
+		return TermBoundVar(shifted, name_lookup(shifted, context));
 	}
 	if (bits & NODE_LHS_FREE)
 		return slot.term;
