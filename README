@@ -8,6 +8,7 @@ Build dependencies (on Debian):
 	libtool-bin
 	libgmp-dev
 	libreadline-dev
+	texlive
 
 To build and test:
 
