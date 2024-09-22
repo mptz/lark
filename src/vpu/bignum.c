@@ -43,12 +43,6 @@
 static void nat_divt_remt1(nat_mt u, uint32_t v, nat_mt *q, uint32_t *r);
 static nat_mt nat_mac1(nat_mt n, uint32_t m, uint32_t a);
 
-static inline int
-nat_is_zero(nat_mt n)
-{
-	return n->nlimbs == 0;
-}
-
 /*
  * Our representation should never have all-0 most-significant limbs, but
  * during operations when the result size is not known in advance, we

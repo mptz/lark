@@ -1,7 +1,7 @@
 #ifndef LARK_VPU_HEAP_H
 #define LARK_VPU_HEAP_H
 /*
- * Copyright (c) 2009-2015 Michael P. Touloumtzis.
+ * Copyright (c) 2009-2021 Michael P. Touloumtzis.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -25,12 +25,29 @@
 #include <inttypes.h>
 #include <stddef.h>
 
-struct vpu;
-
 #include <util/circlist.h>
 
+struct vpu;
+
 /*
- * Structures to register heap roots.  These structures are caller
+ * Heap header and footer objects.  To allocate heap-compatible data
+ * outside the heap, you'll need to sandwich your datum between a pair of
+ * these.  Both must be word-aligned so behavior will be undefined if the
+ * size of the "sandwich filling" is not a multiple of the word size.
+ */
+struct heap_header {
+	uintptr_t hmagic;	/* Magic cookie for integrity checking */
+	uintptr_t nwords;	/* Words used including header & footer */
+	uintptr_t meta;		/* Metadata incl. embedded pointer info */
+	void *data[];		/* User data */
+};
+
+struct heap_footer {
+	uintptr_t fmagic;	/* Magic cookie for integrity checking */
+};
+
+/*
+ * Structures to register heap roots.  These structures are caller-
  * allocated and must exist for the lifetime of the registration.
  */
 struct heap_root_allocator {
@@ -40,8 +57,8 @@ struct heap_root_allocator {
 };
 
 extern void heap_init(void);
+extern void *the_heap_token;		/* featureless heap object */
 extern void *heap_alloc_managed_words(size_t nwords);
-extern void *heap_alloc_mixed_words(size_t nwords);
 extern void *heap_alloc_unmanaged_bytes(size_t size);
 extern void *heap_alloc_unmanaged_words(size_t nwords);
 extern size_t heap_datum_size(const void *datum);

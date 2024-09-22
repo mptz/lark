@@ -1,6 +1,6 @@
 %{
 /*
- * Copyright (c) 2001-2019 Michael P. Touloumtzis.
+ * Copyright (c) 2001-2021 Michael P. Touloumtzis.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -62,6 +62,7 @@ static int asm_yyerror(YYLTYPE *locp, void *scanner, const char *s);
 static void assemble(opcode opcode, unsigned arg1, unsigned arg2);
 static int backpatch(void);
 static void fixout(word word);
+static void floatout(fpw f);
 static void label(symbol_mt sym);
 static void labelref(symbol_mt sym);
 static void wordout(word word);
@@ -82,10 +83,10 @@ static struct backpatch {
 
 %}
 
+%define api.pure
 %locations
 %lex-param {void *scanner}
 %parse-param {void *scanner}
-%pure-parser
 
 /*
  * Other terminals.
@@ -94,8 +95,15 @@ static struct backpatch {
 %token <intx> INT
 %token <numf> FLOAT
 %token <offset> OFFSET
-%token <opcode> OP0 OP0O OP1 OP1C OP1N OP1O OP1S OP1W OP1Z OP2
-%token <reg> REG
+%token <opcode> OP0R OP0RC OP0RN OP0RO OP0RS OP0RW OP0RZ
+		OP1R OP1RC OP1RN OP1RO OP1RS OP1RW OP1RZ
+		OP2R
+		OP1F OP1FF
+		OP2F
+		OP1W OP1WW
+		OP2W
+		OP2WN
+%token <reg> REG REGFD REGW
 %token <str> STRING
 %token <sym> LABEL
 %token <word> CHAR WORD
@@ -110,28 +118,48 @@ static struct backpatch {
 input	: lines { if (backpatch()) YYERROR; }
 	;
 
-lines	: /* empty */
-	| lines EOL
-	| lines labels EOL
-	| lines insn
+lines	: %empty
+	| lines line
 	;
 
-labels	: LABEL ':' { label($1); }
-	| labels LABEL ':' { label($2); }
+line	: labels EOL
+	| labels insn EOL
 	;
 
-insn	: OP0 EOL { assemble($1, 0, 0); }
-	| OP0O LABEL EOL { assemble($1, 0, 0); labelref($2); }
-	| OP0O OFFSET EOL { assemble($1, 0, 0); wordout($2); }
-	| OP1 REG EOL { assemble($1, $2, 0); }
-	| OP1C REG ',' CHAR EOL { assemble($1, $2, 0); wordout($4); }
-	| OP1N REG ',' NAT EOL { assemble($1, $2, 0); fixout($4); }
-	| OP1O REG ',' LABEL EOL { assemble($1, $2, 0); labelref($4); }
-	| OP1O REG ',' OFFSET EOL { assemble($1, $2, 0); wordout($4); }
-	| OP1S REG ',' STRING EOL { assemble($1, $2, 0); fixout($4); }
-	| OP1W REG ',' WORD EOL { assemble($1, $2, 0); wordout($4); }
-	| OP1Z REG ',' INT EOL { assemble($1, $2, 0); fixout($4); }
-	| OP2 REG ',' REG EOL { assemble($1, $2, $4); }
+labels	: %empty
+	| labels LABEL ':'	{ label($2); }
+	;
+
+insn	: OP0R			{ assemble($1,  0,  0); }
+	| OP0RC CHAR		{ assemble($1,  0,  0); wordout($2); }
+	| OP0RN NAT		{ assemble($1,  0,  0); fixout($2); }
+	| OP0RO LABEL		{ assemble($1,  0,  0); labelref($2); }
+	| OP0RO OFFSET		{ assemble($1,  0,  0); wordout($2); }
+	| OP0RS STRING		{ assemble($1,  0,  0); fixout($2); }
+	| OP0RW WORD		{ assemble($1,  0,  0); wordout($2); }
+	| OP0RZ INT		{ assemble($1,  0,  0); fixout($2); }
+
+	| OP1R REG		{ assemble($1, $2,  0); }
+	| OP1RC REG ',' CHAR	{ assemble($1, $2,  0); wordout($4); }
+	| OP1RN REG ',' NAT	{ assemble($1, $2,  0); fixout($4); }
+	| OP1RO REG ',' LABEL	{ assemble($1, $2,  0); labelref($4); }
+	| OP1RO REG ',' OFFSET	{ assemble($1, $2,  0); wordout($4); }
+	| OP1RS REG ',' STRING	{ assemble($1, $2,  0); fixout($4); }
+	| OP1RW REG ',' WORD	{ assemble($1, $2,  0); wordout($4); }
+	| OP1RZ REG ',' INT	{ assemble($1, $2,  0); fixout($4); }
+	| OP2R REG ',' REG	{ assemble($1, $2, $4); }
+
+	| OP1F REGFD		{ assemble($1, $2,  0); }
+	| OP1FF REGFD ',' FLOAT	{ assemble($1, $2,  0); floatout($4); }
+	| OP2F REGFD ',' REGFD	{ assemble($1, $2, $4); }
+
+	| OP1W REGW		{ assemble($1, $2,  0); }
+	| OP1WW REGW ',' LABEL	{ assemble($1, $2,  0); labelref($4); }
+	| OP1WW REGW ',' CHAR	{ assemble($1, $2,  0); wordout($4); }
+	| OP1WW REGW ',' WORD	{ assemble($1, $2,  0); wordout($4); }
+	| OP2W REGW ',' REGW	{ assemble($1, $2, $4); }
+
+	| OP2WN REGW ',' REG	{ assemble($1, $2, $4); }
 	;
 
 %%
@@ -192,6 +220,15 @@ fixout(word word)
 {
 	wordbuf_push(&fixups, wordbuf_used(&codewords));
 	wordbuf_push(&codewords, word);
+}
+
+static void
+floatout(fpw f)
+{
+	union fpw_word_pun pun;
+	pun.f = f;
+	/* XXX this requires 64-bit words! */
+	wordbuf_push(&codewords, pun.w);
 }
 
 static void

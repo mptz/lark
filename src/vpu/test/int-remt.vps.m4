@@ -1,6 +1,6 @@
 |* Integer remainder
-	LDLc	RE, ' '
-	LDLc	RF, '\n'
+	LDI.w	W6, ' '
+	LDI.w	W7, '\n'
 
 m4_define(`header',
 `	LDLs	RA, "$1:\n"
@@ -11,7 +11,7 @@ m4_define(`testcase',
 	LDLz	R1, $2
 	REMTz	R0, R1
 	PRINTz	R0
-	PRINTc	RF
+	PRN.c	W7
 ')
 
 header(Remainder dividend smaller than divisor)

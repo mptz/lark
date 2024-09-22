@@ -23,6 +23,7 @@
  */
 
 #include <util/circlist.h>
+#include <util/float.h>
 #include <util/word.h>
 
 /*
@@ -35,9 +36,16 @@ struct vpu {
 	word	r0, r1, r2, r3, r4, r5, r6, r7,
 		r8, r9, rA, rB, rC, rD, rE, rF;
 				/* general purpose registers */
+	void	*h0, *h1, *h2, *h3, *h4, *h5, *h6, *h7;
+				/* heap-managed registers */
+	float64	fd0, fd1, fd2, fd3, fd4, fd5, fd6, fd7;
+				/* float64 registers */
+	word	w0, w1, w2, w3, w4, w5, w6, w7;
+				/* word registers */
 	word	fp, sp;		/* frame and stack pointers */
 	word	mm;		/* managed mask */
 	offset	rr;		/* result register */
+	word	*gp;		/* global pointer */
 	void	**ip;		/* instruction pointer */
 };
 

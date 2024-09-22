@@ -1,0 +1,29 @@
+|* Bitwise operations on words.
+
+	LDI.w	W7, '\n'
+
+	LDI.w	W0, #14
+	LDI.w	W1, #7
+	AND.w	W1, W0
+	PRN.w	W1
+	PRN.c	W7		|* expect #6
+
+	ZERO.w	W2
+	NOT.w	W2
+	LDI.w	W3, #16
+	LSL.w	W2, W3
+	NOT.w	W2
+	PRN.w	W2		|* expect #65535
+	PRN.c	W7
+
+	LDI.w	W5, #6673
+	MOV.w	W4, W5
+	POPCT.w	W4
+	PRN.w	W4		|* expect #5
+	PRN.c	W7
+	NOT.w	W5
+	POPCT.w	W5
+	PRN.w	W5		|* expect #59 on 64-bit
+	PRN.c	W7
+
+	HALT

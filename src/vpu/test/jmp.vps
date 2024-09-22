@@ -1,41 +1,52 @@
-	LDLc	R0, '0'
-	LDLc	R1, '1'
-	LDLc	R2, '2'
-	LDLc	R3, '3'
-	LDLc	R4, '4'
-	JMP	forward0
+	LDI.w	W0, 'A'
+	LDI.w	W1, 'B'
+	LDI.w	W2, #2
+	JI	forward0
 forward0:
-	LDLc	R5, '5'
-	LDLc	R6, '6'
-	LDLc	R7, '7'
-	LDLc	R8, '8'
-	LDLc	R9, '9'
-	LDLc	RA, 'A'
-	LDLc	RB, 'B'
-	LDLc	RC, 'C'
-	LDLc	RD, '\n'
-	LDLw	RE, #0
-	MOV	RF, RE
-	JMP	forward1
-	PRINTc	R0
-	PRINTc	R1
+	PRN.c	W0
+	PRN.c	W1
+	ZERO.w	W7
+	LDI.w	W6, #2
+	ADD.w	W0, W2
+	ADD.w	W1, W2
+	PRN.c	W0
+	PRN.c	W1
+	JI	forward1
+	PRN.c	W0
+	PRN.c	W1
 backward1:
-	PRINTc	R2
-	PRINTc	R3
+	ADD.w	W0, W2
+	ADD.w	W1, W2
+	PRN.c	W0
+	PRN.c	W1
+	ADD.w	W0, W2
+	ADD.w	W1, W2
+	PRN.c	W0
+	PRN.c	W1
 forward1:
-	PRINTc	R4
-	PRINTc	R5
-	PRINTc	R6
-	JMP	forward2
-	PRINTc	R7
-	PRINTc	R8
-	PRINTc	R9
+	ADD.w	W0, W2
+	ADD.w	W1, W2
+	PRN.c	W0
+	PRN.c	W1
+	JI	forward2
+	PRN.c	W0
+	PRN.c	W1
 forward2:
-	PRINTc	RA
-	PRINTc	RB
-	PRINTc	RC
-	PRINTc	RD
-	CMPw	RE, RF
-	INCw	RF
-	JEQ	backward1
+	JI	forward3
+forward3:
+	ADD.w	W0, W2
+	ADD.w	W1, W2
+	PRN.c	W0
+	PRN.c	W1
+	MOV.w	W5, W7
+	EQR.w	W5, W6
+	INC.w	W7
+	JRD.o	W5
+	JI	backward1
+	ADD.w	W0, W2
+	ADD.w	W1, W2
+	PRN.c	W0
+	PRN.c	W1
+	LDI.w	W0, '\n'
+	PRN.c	W0
 	HALT

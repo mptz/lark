@@ -1,0 +1,22 @@
+|* Basic smoke test for floating-point
+
+	LDI.w	W7, '\n'
+
+	LDI.fd	FD1, 3.14159265358979323846
+	LDI.fd	FD0, 2.0
+	DIV.fd	FD1, FD0
+	PRN.fd FD1
+	PRN.c	W7
+
+	LDI.fd	FD2, 1.41421356237309504880
+	ZERO.fd	FD3
+	ADD.fd	FD3, FD2
+	MUL.fd	FD3, FD2
+	PRN.fd FD3
+	PRN.c	W7
+	LDI.fd	FD4, 2.0
+	SUB.fd	FD4, FD3
+	PRN.fd FD4
+	PRN.c	W7
+
+	HALT

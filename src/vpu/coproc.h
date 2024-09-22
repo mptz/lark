@@ -1,7 +1,7 @@
-#ifndef LARK_VPU_VPSTEP_H
-#define LARK_VPU_VPSTEP_H
+#ifndef LARK_VPU_COPROC_H
+#define LARK_VPU_COPROC_H
 /*
- * Copyright (c) 2009-2018 Michael P. Touloumtzis.
+ * Copyright (c) 2009-2021 Michael P. Touloumtzis.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -22,15 +22,36 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
-#include <util/word.h>
+/*
+ * Nothing here yet--just tracking ideas for virtual coprocessors that
+ * I'll use to manage the size of the main VPU dispatch table.  Note that
+ * for these to be considered for implementation, they should be tightly
+ * coupled to the VPU design; otherwise external C code makes more sense.
+ *
+ * For example, a coprocessor instruction to split a string into an array
+ * of characters makes sense; one to match a regular expression should be
+ * done either natively or in C.
+ *
+ * Note that the assembler should recognize symbolic coprocessor and
+ * coprocessor operation names.
+ */
 
-#include "opcode.h"
+/*
+ * Coprocessor possibilities:
 
-extern insncode vpstep_insn;
-extern word vpstep_arg; 
+	floating point
+	random numbers
+	cryptography
+	string operations
+	vector/array operations
+	bignum math
+	hashing
+	memory management/garbage collection
+	tracing & debugging
+	timing operations
+	interrupt handling
+	input/output
 
-extern int vpstep_yyparse(void);
-extern void vpstep_init_lexer(const char *str);
-extern void vpstep_fini_lexer(void);
+ */
 
-#endif /* LARK_VPU_VPSTEP_H */
+#endif /* LARK_VPU_COPROC_H */

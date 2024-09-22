@@ -1,0 +1,18 @@
+|* Comparison operations on words.
+
+	LDI.w	W6, ' '
+	LDI.w	W7, '\n'
+
+	LDLw	R0, #0
+	LDLw	R1, #1
+	LDLw	R2, #12345
+	LTw	R0, R1
+	LDRR	RD
+	PRINTo	RD
+	PRN.c	W6
+	LTw	R1, R0
+	LDRR	RD
+	PRINTo	RD
+	PRN.c	W7
+
+	HALT

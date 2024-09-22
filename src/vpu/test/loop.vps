@@ -1,16 +1,18 @@
 |* Test looping
-	LDLc	RE, ' '
-	LDLc	RF, '\n'
+	LDI.w	W6, ' '
+	LDI.w	W7, '\n'
 
-	LDLw	R0, #0		|* loop counter
-	LDLw	R1, #10		|* loop bound
+	LDI.w	W0, #0		|* loop counter
+	LDI.w	W1, #10		|* loop bound
 top:
-	PRINTw	R0
-	PRINTc	RE
-	INCw	R0
-	CMPw	R0, R1
-	JLT	top
+	PRN.w	W0
+	PRN.c	W6
+	INC.w	W0
+	MOV.w	W2, W0
+	EQR.w	W2, W1
+	JRD.o	W2
+	JI	top
 	LDLs	R2, "done"
 	PRINTs	R2
-	PRINTc	RF
+	PRN.c	W7
 	HALT

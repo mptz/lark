@@ -1,8 +1,8 @@
 |* Integer increment & decrement.  The most critical cases are the transitions
 |* through zero in both directions.  We need to ensure that no negative zeros
 |* (-0) leak out of our sign-magnitude representation.
-	LDLc	RE, ' '
-	LDLc	RF, '\n'
+	LDI.w	W6, ' '
+	LDI.w	W7, '\n'
 
 m4_define(`header',
 `	LDLs	RA, "$1:\n"
@@ -11,33 +11,33 @@ m4_define(`header',
 m4_define(`testcase',
 `	LDLz	R0, $1
 	PRINTz	R0
-	PRINTc	RE
+	PRN.c	W6
 
 	INCz	R0
 	PRINTz	R0
-	PRINTc	RE
+	PRN.c	W6
 	INCz	R0
 	PRINTz	R0
-	PRINTc	RE
+	PRN.c	W6
 	INCz	R0
 	PRINTz	R0
-	PRINTc	RE
+	PRN.c	W6
 	INCz	R0
 	PRINTz	R0
-	PRINTc	RE
+	PRN.c	W6
 
 	DECz	R0
 	PRINTz	R0
-	PRINTc	RE
+	PRN.c	W6
 	DECz	R0
 	PRINTz	R0
-	PRINTc	RE
+	PRN.c	W6
 	DECz	R0
 	PRINTz	R0
-	PRINTc	RE
+	PRN.c	W6
 	DECz	R0
 	PRINTz	R0
-	PRINTc	RF
+	PRN.c	W7
 ')
 
 header(Increment/decrement through zero)

@@ -2,8 +2,6 @@ make_library(libvpu,
 	     bignum.c heap.c pstr.c vpheader.c vpu.c)
 make_binary(vpasm, asm.l asm.y opcode.c pool.c vpasm.c, vpu util)
 make_binary(vpu, vprun.c, vpu util)
-make_binary(vpstep, opcode.c vpstep.c vpstep.l vpstep.y,
-	    vpu util, curses readline)
 make_binary(bignumstress, bignum.c bignumstress.c heap.c, util, gmp)
 make_binary(bignumtest, bignumtest.c, , gmp)
 
@@ -13,6 +11,13 @@ make_binary(bignumtest, bignumtest.c, , gmp)
 $(subdir)opcode.h: $(subdir)opcodes.h
 $(subdir)opcode.c: $(subdir)insncodes.c $(subdir)opnames.c
 $(subdir)vpu.c: $(subdir)oplabels.c $(subdir)opargs.c $(subdir)opimpls.c
+
+# gcc chokes compiling vpu.c with optimizations, not surprisingly given
+# that it contains a function tens of thousands of lines long.
+#
+ifeq ($(CONFIG),optimize)
+$(subdir)vpu.o: CFLAGS := $(subst O3,Og,$(CFLAGS))
+endif
 
 $(subdir)@distclean: clean-files += \
 	$(subdir)insncodes.c $(subdir)opargs.c $(subdir)opcodes.h \

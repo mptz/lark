@@ -99,4 +99,7 @@ extern int_mt int_divt(int_mt u, int_mt v);
 extern int_mt int_remt(int_mt u, int_mt v);
 extern int int_cmp(int_mt x, int_mt y);
 
+static inline int nat_is_zero(nat_mt n)
+	{ return n->nlimbs == 0; }
+
 #endif /* LARK_VPU_BIGNUM_H */

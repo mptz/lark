@@ -43,12 +43,17 @@ void insn_code2index_init(void)
 	   as table values; we decrement on the way back out. */
 	for (size_t i = 0; i < b; ++i)
 		wordtab_put(&insn_index_tab, insncodes[i], (void*) (i + 1));
+	struct wordtab_stats stats;
+	wordtab_stats(&insn_index_tab, &stats);
+	if (stats.used != b)
+		panic("Instruction codes aren't all unique!\n");
 }
 
 unsigned insn_code2index(insncode insncode)
 {
 	size_t i = (size_t) wordtab_get(&insn_index_tab, insncode);
 	if (!i)
-		panic("Invalid instruction code given to code2index!\n");
+		panicf("Invalid instruction code %08X given to code2index!\n",
+		       insncode);
 	return i - 1;
 }

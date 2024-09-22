@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009-2018 Michael P. Touloumtzis.
+ * Copyright (c) 2009-2021 Michael P. Touloumtzis.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -25,23 +25,43 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #include <util/message.h>
 
 #include "heap.h"
 #include "vpu.h"
 
-#define HEAPWORDS 4000000
+/*
+ * At some point the heap will become resizeable but for now this keeps
+ * things nice and simple.
+ */
+#define HEAPWORDS 10000000
 
-#define HH_PTRBITS	3	/* Permits up to 8 header types; 4 in use */
-#define HH_PTRMASK	0x7	/* Corresponding mask */
-#define HH_NOT_HEAP	0	/* This block is not heap-allocated */
-#define HH_UNMANAGED	1	/* Heap-allocated block, no heap pointers */
-#define HH_MANAGED	2	/* Heap-allocated block of pointers to heap */
-#define HH_MIXED	3	/* Heap-allocated, use bits to distinguish */
+/*
+ * Heap magic cookies used to detect memory corruption.
+ */
+#define HH_MAGIC	0xDEADBEEF
+#define HF_MAGIC	((void*) 0xFEEDCAFE)
 
-#define HHMAGIC 0xDEADBEEF
-#define HFMAGIC ((void*) 0xFEEDCAFE)
+/*
+ * Heap header metadata.
+ */
+#define HH_LOCBITS	2	/* block location vis a vis heap */
+#define HH_LOCMASK	0x3	/* corresponding mask */
+#define HH_OUTSIDE	0	/* this block remains outside the heap */
+#define HH_COPY_IN	1	/* copy in if possible during GC */
+#define HH_COPY_OUT	2	/* copy out during GC */
+#define HH_INSIDE	3	/* lives & remains in heap */
+
+#define HH_PTRBITS	2	/* permits up to 8 header types; 4 in use */
+#define HH_PTRMASK	0xC	/* corresponding mask */
+#define HH_PTRFREE	0	/* heap-allocated block, no heap pointers */
+#define HH_PTRFULL	4	/* heap-allocated block of pointers to heap */
+#define HH_PTRMIX	8	/* heap-allocated, use bits to distinguish */
+
+#define HH_METABITS	4	/* total number of bits used above */
+#define HH_METAMASK	0xF	/* mask for all of above */
 
 /*
  * During GC, we need to forward a heap object into the to-space.  We do this
@@ -50,16 +70,17 @@
  * 0-word object, but there would be no need to do so in the movable heap
  * anyway--we could always use a reference to a singleton, permanent value.
  */
-struct heap_header {
-	uintptr_t hmagic;	/* Magic cookie for integrity checking */
-	uintptr_t nwords;	/* Words used including header & footer */
-	uintptr_t meta;		/* Metadata incl. embedded pointer info */
-	void *data[];		/* User data */
-};
 
-struct heap_footer {
-	uintptr_t fmagic;	/* Magic cookie for integrity checking */
-};
+/*
+ * A token heap-managed object which can be used as a placeholder (null
+ * value) in heap-managed registers.
+ */
+static struct heap_token {
+	struct heap_header header;
+	word token;		/* Heap doesn't support 0-length objects */
+	struct heap_footer footer;
+} the_heap_token_object;
+void *the_heap_token = &the_heap_token_object.token;
 
 #define WORDBYTES (sizeof (uintptr_t))
 #define HEADERBYTES (sizeof (struct heap_header))
@@ -128,6 +149,13 @@ heap_init(void)
 	the_heap_bound = the_heap + HWORDS;
 	circlist_init(&the_roots_sentinel);
 	circlist_init(&the_vpu_sentinel);
+
+	/* initialize token object */
+	the_heap_token_object.header.hmagic = HH_MAGIC;
+	the_heap_token_object.header.nwords = EXTRAWORDS + 1;
+	the_heap_token_object.header.meta = HH_OUTSIDE | HH_PTRFREE;
+	the_heap_token_object.token = 42;
+	the_heap_token_object.footer.fmagic = (word) HF_MAGIC;
 }
 
 static void *
@@ -148,8 +176,8 @@ heap_alloc(uintptr_t nwords, uintptr_t meta)
 				"%zu (%zu + %zu) word(s)\n",
 				nwords, nwords - EXTRAWORDS, EXTRAWORDS);
 	}
-	header->hmagic = HHMAGIC;
-	header->data[nwords - EXTRAWORDS] = HFMAGIC;
+	header->hmagic = HH_MAGIC;
+	header->data[nwords - EXTRAWORDS] = HF_MAGIC;
 	header->nwords = nwords;
 	header->meta = meta;
 	return header->data;
@@ -158,19 +186,20 @@ heap_alloc(uintptr_t nwords, uintptr_t meta)
 void *
 heap_alloc_managed_words(size_t nwords)
 {
-	return heap_alloc(nwords, HH_MANAGED);
+	return heap_alloc(nwords, HH_INSIDE | HH_PTRFULL);
 }
 
 void *
 heap_alloc_unmanaged_bytes(size_t size)
 {
-	return heap_alloc((size + WORDBYTES - 1) / WORDBYTES, HH_UNMANAGED);
+	return heap_alloc((size + WORDBYTES - 1) / WORDBYTES,
+			  HH_INSIDE | HH_PTRFREE);
 }
 
 void *
 heap_alloc_unmanaged_words(size_t nwords)
 {
-	return heap_alloc(nwords, HH_UNMANAGED);
+	return heap_alloc(nwords, HH_INSIDE | HH_PTRFREE);
 }
 
 size_t
@@ -237,7 +266,7 @@ heap_gc_move(void **ref, void *tospace)
 	struct heap_header *src = (struct heap_header *) *ref;
 	--src;	/* Offset from stored data to heap header */
 
-	if ((src->meta & HH_PTRMASK) == HH_NOT_HEAP) {
+	if ((src->meta & HH_LOCMASK) == HH_OUTSIDE) {
 		/*
 		 * A non-heap-managed block such as a constant literal;
 		 * we're not allowed to move it, and it's not allowed to
@@ -245,6 +274,8 @@ heap_gc_move(void **ref, void *tospace)
 		 */
 		return 0;
 	}
+	if ((src->meta & HH_LOCMASK) != HH_INSIDE)
+		panic("Copy in/out not yet supported!\n");
 	if (src->nwords == 0) {
 		/*
 		 * This data has already been forwarded.  Relocate the
@@ -288,6 +319,14 @@ heap_gc_vpu(struct vpu *vpu, uintptr_t *dst)
 	if (vpu->mm & 0x2000) dst += heap_gc_move((void**) &vpu->rD, dst);
 	if (vpu->mm & 0x4000) dst += heap_gc_move((void**) &vpu->rE, dst);
 	if (vpu->mm & 0x8000) dst += heap_gc_move((void**) &vpu->rF, dst);
+	dst += heap_gc_move(&vpu->h0, dst);
+	dst += heap_gc_move(&vpu->h1, dst);
+	dst += heap_gc_move(&vpu->h2, dst);
+	dst += heap_gc_move(&vpu->h3, dst);
+	dst += heap_gc_move(&vpu->h4, dst);
+	dst += heap_gc_move(&vpu->h5, dst);
+	dst += heap_gc_move(&vpu->h6, dst);
+	dst += heap_gc_move(&vpu->h7, dst);
 	return dst;
 }
 
@@ -295,7 +334,7 @@ static inline uintptr_t *
 heap_gc_ptrmap(struct heap_header *header, uintptr_t *dst)
 {
 	uintptr_t i, map;
-	for (i = 0, map = header->meta >> HH_PTRBITS; map; ++i, map >>= 1) {
+	for (i = 0, map = header->meta >> HH_METABITS; map; ++i, map >>= 1) {
 		if (map & 1)
 			dst += heap_gc_move(header->data + i, dst);
 	}
@@ -305,8 +344,16 @@ heap_gc_ptrmap(struct heap_header *header, uintptr_t *dst)
 static void
 heap_gc(void)
 {
+	struct timespec timespec;
+	static double timep = 0.0;
+	double time0, time1;
+
 	/* Track GC invocations for diagnostics */
 	++the_gc_cycle;
+	/* Use CLOCK_MONOTONIC_COARSE once we care about performance */
+	clock_gettime(CLOCK_MONOTONIC, &timespec);
+	time0 = (double) timespec.tv_sec +
+		((double) timespec.tv_nsec / 1000000000.0);
 
 	infof("GC start, cycle %u...\n", the_gc_cycle);
 	during_gc = 1;
@@ -367,14 +414,14 @@ heap_gc(void)
 		heap_validate(header + 1);
 
 		switch (header->meta & HH_PTRMASK) {
-		case HH_MANAGED: {
+		case HH_PTRFULL: {
 			const size_t j = header->nwords - EXTRAWORDS;
 			for (i = 0; i < j; ++i)
 				dstcurr += heap_gc_move(header->data + i,
 							dstcurr);
 			break;
 		}
-		case HH_UNMANAGED:
+		case HH_PTRFREE:
 			break;
 		default:
 			panicf("Unhandled heap metadata: %zX\n", header->meta);
@@ -385,13 +432,25 @@ heap_gc(void)
 	assert(dstbase == dstcurr);
 
 	/* Obliterate source heap, retarget pointers */
+	/*
+	 * Note: this innocent-looking memset() takes up >99% of the GC
+	 * time in many cases.  It's here since the heap is under active
+	 * development and I want to fail fast in case of issues, but it
+	 * will absolutely have to be conditionalized for good performance.
+	 */
 	memset(srcbase, 0, (the_heap_bound - srcbase) * WORDBYTES);
 	the_heap = dstcurr;
 	the_heap_bound = dstbound;
 	info("GC postvalidation starting...\n");
 	heap_validate_full();
 	info("GC postvalidation complete\n");
-	infof("GC done, cycle %u\n", the_gc_cycle);
+
+	clock_gettime(CLOCK_MONOTONIC, &timespec);
+	time1 = (double) timespec.tv_sec +
+		((double) timespec.tv_nsec / 1000000000.0);
+	infof("GC done, cycle %u, dt %.6fs, duty %.2f%%\n", the_gc_cycle,
+	      time1 - time0, 100.0 * (time1 - time0) / (time0 - timep));
+	timep = time1;
 	during_gc = 0;
 }
 
@@ -412,13 +471,13 @@ heap_perm(const void *datum, void *dst, size_t dstsize)
 {
 	heap_validate((void*) datum);
 	struct heap_header *src = (struct heap_header*) datum - 1;
-	if ((src->meta & HH_PTRBITS) != HH_UNMANAGED)
+	if ((src->meta & HH_PTRMASK) != HH_PTRFREE)
 		panic("Can't move pointerful object to the permanent heap\n");
 	size_t size = src->nwords * WORDBYTES;
 	if (size > dstsize)
 		panicf("Need %zu bytes, %zu available\n", size, dstsize);
 	memcpy(dst, src, size);
-	((struct heap_header*) dst)->meta &= ~HH_PTRBITS;	/* not-heap */
+	((struct heap_header*) dst)->meta &= ~HH_LOCMASK;	/* outside */
 	return size;
 }
 
@@ -482,17 +541,19 @@ heap_shallow_validate(void *datum)
 
 	const struct heap_header *header = datum;
 	--header;	/* Offset from stored data to heap header */
-	if ((header->meta & HH_PTRMASK) == HH_NOT_HEAP)
+	if ((header->meta & HH_LOCMASK) == HH_OUTSIDE)
 		return datum;			/* not a heap-managed object */
+	if ((header->meta & HH_LOCMASK) != HH_INSIDE)
+		panic("Copy in/out not yet supported!\n");
 	if (!in_a_space(datum) && !in_b_space(datum))
 		panicf("Datum 0x%"PRIXPTR" is outside managed space\n", datum);
-	if (header->hmagic == HHMAGIC &&
+	if (header->hmagic == HH_MAGIC &&
 	    header->nwords == 0 && during_gc)	/* forwarded during GC */
 		return datum;
-	if (header->hmagic != HHMAGIC ||
+	if (header->hmagic != HH_MAGIC ||
 	    header->nwords < EXTRAWORDS ||
 	    header->nwords >= HEAPWORDS ||
-	    header->data[header->nwords - EXTRAWORDS] != HFMAGIC) {
+	    header->data[header->nwords - EXTRAWORDS] != HF_MAGIC) {
 		heap_dump_datum(datum);
 		panicf("Datum 0x%"PRIXPTR" has been mangled\n", datum);
 	}
@@ -510,14 +571,13 @@ heap_validate(void *datum)
 	 */
 	const struct heap_header *header = datum;
 	--header;	/* Offset from stored data to heap header */
-	if (header->hmagic == HHMAGIC &&
+	if (header->hmagic == HH_MAGIC &&
 	    header->nwords == 0 && during_gc)	/* forwarded during GC */
 		return datum;
 	switch (header->meta & HH_PTRMASK) {
-	case HH_NOT_HEAP:
-	case HH_UNMANAGED:
+	case HH_PTRFREE:
 		break;
-	case HH_MANAGED: {
+	case HH_PTRFULL: {
 		const uintptr_t b = header->nwords - EXTRAWORDS;
 		uintptr_t i = 0;
 		while (i < b) heap_shallow_validate(header->data[i++]);

@@ -1,7 +1,7 @@
 |* Integer absolute-value and magnitude.  These do the same thing, except
 |* that ABS returns an int and MAG returns a nat.  Both are very simple,
 |* not a lot of code-path complexity to test.
-	LDLc	RF, '\n'
+	LDI.w	W7, '\n'
 
 m4_define(`header',
 `	LDLs	RA, "$1:\n"
@@ -11,13 +11,13 @@ m4_define(`abs_testcase',
 `	LDLz	R0, $1
 	ABSz	R0
 	PRINTz	R0
-	PRINTc	RF
+	PRN.c	W7
 ')
 m4_define(`mag_testcase',
 `	LDLz	R0, $1
 	MAGz	R0
 	PRINTn	R0
-	PRINTc	RF
+	PRN.c	W7
 ')
 
 header(Absolute value/magnitude small integers)

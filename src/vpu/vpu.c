@@ -24,6 +24,7 @@
 #include <signal.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 #include <sys/mman.h>
 #include <unistd.h>
 
@@ -47,14 +48,14 @@ char vpu_insn_arg_table [] = {
 #include "opargs.c"
 };
 
-#ifdef VPU_STACK_IMPLEMENTED
 /*
  * This specifies the default number of words to allocate for the stack,
  * but we may round up to abut guard pages, i.e. we make no guarantee of
- * overflow on reaching this limit.
+ * overflow on reaching this limit exactly.
  */
 #define VPU_STACK_WORDS 5000
 
+#ifdef VPU_STACK_IMPLEMENTED
 /*
  * We currently have two stacks rather than one; the value stack contains
  * GC-visible value pointers while the code stack contains instruction
@@ -64,9 +65,10 @@ char vpu_insn_arg_table [] = {
  */
 static union value **S, **SP, **FP;	/* stack with stack and frame ptrs */
 static word **CS, **CSP;		/* code stack (non-GC'able) */
-static void *voflo_guard, *vuflo_guard, *vuflo_bound,
-	    *coflo_guard, *cuflo_guard, *cuflo_bound;
+#endif	/* VPU_STACK_IMPLEMENTED */
 
+#ifdef VPU_STACK_IMPLEMENTED
+static word **S;	/* XXX move to VPU stack pointer */
 #endif	/* VPU_STACK_IMPLEMENTED */
 
 #if 0	/* XXX */
@@ -76,31 +78,28 @@ static void *voflo_guard, *vuflo_guard, *vuflo_bound,
 static inline uintptr_t i2w(insn insn) { return (uintptr_t) insn; }
 #endif
 
+/*
+ * XXX the current implementation allows only a single global stack, not
+ * a per-VPU stack (it's ported from an earlier implementation).  Instead
+ * of a single overflow-underflow guard pair, we should have one per stack.
+ */
+#ifdef VPU_STACK_IMPLEMENTED
+static void *oflo_guard, *uflo_guard, *uflo_bound;
+#endif	/* VPU_STACK_IMPLEMENTED */
+
 #ifdef VPU_STACK_IMPLEMENTED
 static void
 segvhandler(int sig, siginfo_t *si, void *unused)
 {
 	assert(sig == SIGSEGV);
-	if (si->si_addr >= voflo_guard && si->si_addr < (void*) S) {
-		fprintf(stderr, "Stack overflow: "
+	if (si->si_addr >= oflo_guard && si->si_addr < (void*) S) {
+		fprintf(stderr, "VPU stack overflow: "
 			"SIGSEGV at 0x%lX in guard area\n",
 			(long) si->si_addr);
 		exit(EXIT_FAILURE);
 	}
-	if (si->si_addr >= vuflo_guard && si->si_addr < vuflo_bound) {
-		fprintf(stderr, "Stack underflow: "
-			"SIGSEGV at 0x%lX in guard area\n",
-			(long) si->si_addr);
-		exit(EXIT_FAILURE);
-	}
-	if (si->si_addr >= coflo_guard && si->si_addr < (void*) CS) {
-		fprintf(stderr, "Code stack overflow: "
-			"SIGSEGV at 0x%lX in guard area\n",
-			(long) si->si_addr);
-		exit(EXIT_FAILURE);
-	}
-	if (si->si_addr >= cuflo_guard && si->si_addr < cuflo_bound) {
-		fprintf(stderr, "Code stack underflow: "
+	if (si->si_addr >= uflo_guard && si->si_addr < uflo_bound) {
+		fprintf(stderr, "VPU stack underflow: "
 			"SIGSEGV at 0x%lX in guard area\n",
 			(long) si->si_addr);
 		exit(EXIT_FAILURE);
@@ -113,10 +112,14 @@ segvhandler(int sig, siginfo_t *si, void *unused)
 	signal(sig, SIG_DFL);
 	raise(sig);
 }
+#endif	/* VPU_STACK_IMPLEMENTED */
 
 /*
  * A single 4K guard page seems a bit small--easy to overshoot?
+ * Should revisit... we're not allocating large data structures
+ * on the stack, a single page might be ample.
  */
+#ifdef VPU_STACK_IMPLEMENTED
 static size_t
 get_guardsize(size_t pagesize)
 {
@@ -124,19 +127,23 @@ get_guardsize(size_t pagesize)
 	       (pagesize < 16384) ? pagesize * 2 :
 	       pagesize;
 }
+#endif	/* VPU_STACK_IMPLEMENTED */
 
 /*
  * Set the stack to the smallest page-multiple size larger than the
  * desired size.
  */
+#ifdef VPU_STACK_IMPLEMENTED
 static size_t
 get_stacksize(size_t pagesize)
 {
-	size_t stacksize = sizeof *S * STACKWORDS,
+	size_t stacksize = sizeof *S * VPU_STACK_WORDS,
 	       remainder = stacksize % pagesize;
 	return remainder ? stacksize - remainder + pagesize : stacksize;
 }
+#endif	/* VPU_STACK_IMPLEMENTED */
 
+#ifdef VPU_STACK_IMPLEMENTED
 static void
 stackconf(void)
 {
@@ -155,19 +162,12 @@ stackconf(void)
 	/*
 	 * Allocate value and code stacks.
 	 */
-	if (posix_memalign(&voflo_guard, pagesize, allocsize) != 0)
+	if (posix_memalign(&oflo_guard, pagesize, allocsize) != 0)
 		ppanic("posix_memalign");
-	S = voflo_guard + guardsize;
-	vuflo_guard = S + (stacksize / sizeof *S);
-	vuflo_bound = vuflo_guard + guardsize;
-	assert(voflo_guard + allocsize == vuflo_bound);
-
-	if (posix_memalign(&coflo_guard, pagesize, allocsize) != 0)
-		ppanic("posix_memalign");
-	CS = coflo_guard + guardsize;
-	cuflo_guard = CS + (stacksize / sizeof *CS);
-	cuflo_bound = cuflo_guard + guardsize;
-	assert(coflo_guard + allocsize == cuflo_bound);
+	S = (word**) (((char*) oflo_guard) + guardsize);
+	uflo_guard = S + (stacksize / sizeof *S);
+	uflo_bound = (word**) (((char*) uflo_guard) + guardsize);
+	assert(((char*) oflo_guard) + allocsize == uflo_bound);
 
 	/*
 	 * Set up a signal handler for SIGSEGV to catch references into
@@ -183,17 +183,12 @@ stackconf(void)
 	/*
 	 * Now configure memory protection on the guard regions.
 	 */
-	if (mprotect(voflo_guard, guardsize, PROT_NONE) == -1)
+	if (mprotect(oflo_guard, guardsize, PROT_NONE) == -1)
 		ppanic("mprotect");
-	if (mprotect(vuflo_guard, guardsize, PROT_NONE) == -1)
-		ppanic("mprotect");
-	if (mprotect(coflo_guard, guardsize, PROT_NONE) == -1)
-		ppanic("mprotect");
-	if (mprotect(cuflo_guard, guardsize, PROT_NONE) == -1)
+	if (mprotect(uflo_guard, guardsize, PROT_NONE) == -1)
 		ppanic("mprotect");
 
-	SP = FP = vuflo_guard;
-	CSP = cuflo_guard;
+	//SP = uflo_guard;
 	//heap_stack_register((void **) SP, (void ***) &SP); XXX
 }
 #endif	/* VPU_STACK_IMPLEMENTED */
@@ -205,8 +200,15 @@ void vpu_init(struct vpu *vpu, const char *name)
 	vpu->r4 = vpu->r5 = vpu->r6 = vpu->r7 =
 	vpu->r8 = vpu->r9 = vpu->rA = vpu->rB =
 	vpu->rC = vpu->rD = vpu->rE = vpu->rF = 0;
+	vpu->h0 = vpu->h1 = vpu->h2 = vpu->h3 =
+	vpu->h4 = vpu->h5 = vpu->h6 = vpu->h7 = the_heap_token;
+	vpu->fd0 = vpu->fd1 = vpu->fd2 = vpu->fd3 =
+	vpu->fd4 = vpu->fd5 = vpu->fd6 = vpu->fd7 = 0.0f64;
+	vpu->w0 = vpu->w1 = vpu->w2 = vpu->w3 =
+	vpu->w4 = vpu->w5 = vpu->w6 = vpu->w7 = 0;
 	vpu->mm = 0;		/* nothing gc-managed */
 	vpu->rr = 0;
+	vpu->gp = NULL;
 	heap_register_vpu(vpu);
 	vpu_run(NULL);		/* externalize dispatch table */
 }

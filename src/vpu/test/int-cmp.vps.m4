@@ -1,6 +1,6 @@
 |* Integer comparisons
-	LDLc	RE, ' '
-	LDLc	RF, '\n'
+	LDI.w	W6, ' '
+	LDI.w	W7, '\n'
 
 m4_define(`header',
 `	LDLs	RA, "$1:\n"
@@ -12,14 +12,12 @@ m4_define(`testcase',
 	INCz	R1
 	DECz	R1		|* bypass literal pooling
 	CMPz	R0, R1
-	LDRR	RC
-	PRINTo	RC
-	PRINTc	RE
+	PRINTrr
+	PRN.c	W6
 	LDLz	R2, $2
 	CMPz	R0, R2
-	LDRR	RC
-	PRINTo	RC
-	PRINTc	RF
+	PRINTrr
+	PRN.c	W7
 ')
 
 header(Comparison zero cases)

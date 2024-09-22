@@ -47,6 +47,10 @@ strcmp3(str_mt a, str_mt b)
 	return memcmp(adata, bdata, asize);
 }
 
+/*
+ * XXX it looks like this is unsafe... heap allocation could invalidate
+ * pointers.
+ */
 str_mt
 strconcat(str_mt a, str_mt b)
 {

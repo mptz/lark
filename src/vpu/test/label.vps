@@ -1,13 +1,28 @@
 |* XXX this needs a lot more cases
-|* Currently just a placeholder
 
 start:
-	MOV	R0, R5
-	NOP
-another_label:
-	ADDw	R3, R7
-	INCw	R4
-	LDLo	RA, another_label
-	LDLw	R5, #123
+	LDI.w	W6, '0'
+	PRN.c	W6
+	LDI.w	W1, #3
+	LDI.w	W0, forwards
+	SUB.w	W0, W1		|* adjust for LDI-JR gap
+	JR.o	W0
+backwards:
+	LDI.w	W6, '2'
+	PRN.c	W6
+	LDI.w	W0, the_end
+	SUB.w	W0, W1		|* adjust for LDI-JR gap
+	JR.o	W0
+forwards:
+	LDI.w	W6, '1'
+	PRN.c	W6
+	LDI.w	W0, backwards
+	SUB.w	W0, W1		|* adjust for LDI-JR gap
+	JR.o	W0
+the_end:
+	LDI.w	W6, '3'
+	PRN.c	W6
+	LDI.w	W7, '\n'
+	PRN.c	W7
 	HALT
 after_the_end:

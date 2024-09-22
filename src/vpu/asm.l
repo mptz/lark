@@ -75,9 +75,11 @@ FLOAT	{REAL}|{SCI}
  * Alphanumerics: instructions, labels, registers.  Note that INSN and
  * REG overlap so we'll need to pay attention to order below.
  */
-INSN	[A-Z][A-Za-z]*
+INSN	[A-Z][A-Za-z.]*
 LABEL	[a-z][A-Za-z0-9_]*
 REG	R[0-9A-F]
+REGFD	FD[0-7]
+REGW	W[0-7]
 
 %%
 	/*
@@ -97,102 +99,113 @@ REG	R[0-9A-F]
 	 * include mechanism for rules, so we paste oplex.l here when the
 	 * operations change (not too often).
 	 */
-ILL  yylval->opcode = opILL; return OP0;
-NOP  yylval->opcode = opNOP; return OP0;
-HALT  yylval->opcode = opHALT; return OP0;
-BREAK  yylval->opcode = opBREAK; return OP0;
-GC  yylval->opcode = opGC; return OP0;
-TRACE  yylval->opcode = opTRACE; return OP0;
-JMP  yylval->opcode = opJMP; return OP0O;
-JEQ  yylval->opcode = opJEQ; return OP0O;
-JNE  yylval->opcode = opJNE; return OP0O;
-JLT  yylval->opcode = opJLT; return OP0O;
-JGE  yylval->opcode = opJGE; return OP0O;
-LDLc  yylval->opcode = opLDLc; return OP1C;
-LDLf  yylval->opcode = opLDLf; return OP1W;
-LDLn  yylval->opcode = opLDLn; return OP1N;
-LDLo  yylval->opcode = opLDLo; return OP1O;
-LDLs  yylval->opcode = opLDLs; return OP1S;
-LDLw  yylval->opcode = opLDLw; return OP1W;
-LDLz  yylval->opcode = opLDLz; return OP1Z;
-ZEROf  yylval->opcode = opZEROf; return OP1;
-ZEROo  yylval->opcode = opZEROo; return OP1;
-ZEROw  yylval->opcode = opZEROw; return OP1;
-JMPI  yylval->opcode = opJMPI; return OP1O;
-BEQ  yylval->opcode = opBEQ; return OP1;
-BNE  yylval->opcode = opBNE; return OP1;
-BLT  yylval->opcode = opBLT; return OP1;
-BLE  yylval->opcode = opBLE; return OP1;
-BGT  yylval->opcode = opBGT; return OP1;
-BGE  yylval->opcode = opBGE; return OP1;
-LDRR  yylval->opcode = opLDRR; return OP1;
-ASR  yylval->opcode = opASR; return OP1W;
-LSL  yylval->opcode = opLSL; return OP1W;
-LSR  yylval->opcode = opLSR; return OP1W;
-NOT  yylval->opcode = opNOT; return OP1;
-INCn  yylval->opcode = opINCn; return OP1;
-INCo  yylval->opcode = opINCo; return OP1;
-INCw  yylval->opcode = opINCw; return OP1;
-INCz  yylval->opcode = opINCz; return OP1;
-DECn  yylval->opcode = opDECn; return OP1;
-DECo  yylval->opcode = opDECo; return OP1;
-DECw  yylval->opcode = opDECw; return OP1;
-DECz  yylval->opcode = opDECz; return OP1;
-POSn  yylval->opcode = opPOSn; return OP1;
-NEGf  yylval->opcode = opNEGf; return OP1;
-NEGo  yylval->opcode = opNEGo; return OP1;
-NEGn  yylval->opcode = opNEGn; return OP1;
-NEGz  yylval->opcode = opNEGz; return OP1;
-ABSz  yylval->opcode = opABSz; return OP1;
-MAGz  yylval->opcode = opMAGz; return OP1;
-PRINTc  yylval->opcode = opPRINTc; return OP1;
-PRINTf  yylval->opcode = opPRINTf; return OP1;
-PRINTn  yylval->opcode = opPRINTn; return OP1;
-PRINTo  yylval->opcode = opPRINTo; return OP1;
-PRINTs  yylval->opcode = opPRINTs; return OP1;
-PRINTw  yylval->opcode = opPRINTw; return OP1;
-PRINTz  yylval->opcode = opPRINTz; return OP1;
-MOV  yylval->opcode = opMOV; return OP2;
-CMPc  yylval->opcode = opCMPc; return OP2;
-CMPf  yylval->opcode = opCMPf; return OP2;
-CMPn  yylval->opcode = opCMPn; return OP2;
-CMPo  yylval->opcode = opCMPo; return OP2;
-CMPs  yylval->opcode = opCMPs; return OP2;
-CMPw  yylval->opcode = opCMPw; return OP2;
-CMPz  yylval->opcode = opCMPz; return OP2;
-ANDw  yylval->opcode = opANDw; return OP2;
-ORw  yylval->opcode = opORw; return OP2;
-XORw  yylval->opcode = opXORw; return OP2;
-ADDf  yylval->opcode = opADDf; return OP2;
-ADDn  yylval->opcode = opADDn; return OP2;
-ADDo  yylval->opcode = opADDo; return OP2;
-ADDw  yylval->opcode = opADDw; return OP2;
-ADDz  yylval->opcode = opADDz; return OP2;
-SUBf  yylval->opcode = opSUBf; return OP2;
-SUBn  yylval->opcode = opSUBn; return OP2;
-SUBo  yylval->opcode = opSUBo; return OP2;
-SUBw  yylval->opcode = opSUBw; return OP2;
-SUBz  yylval->opcode = opSUBz; return OP2;
-MULf  yylval->opcode = opMULf; return OP2;
-MULn  yylval->opcode = opMULn; return OP2;
-MULo  yylval->opcode = opMULo; return OP2;
-MULw  yylval->opcode = opMULw; return OP2;
-MULz  yylval->opcode = opMULz; return OP2;
-DIVf  yylval->opcode = opDIVf; return OP2;
-DIVTn  yylval->opcode = opDIVTn; return OP2;
-DIVTo  yylval->opcode = opDIVTo; return OP2;
-DIVTw  yylval->opcode = opDIVTw; return OP2;
-DIVTz  yylval->opcode = opDIVTz; return OP2;
-REMTn  yylval->opcode = opREMTn; return OP2;
-REMTo  yylval->opcode = opREMTo; return OP2;
-REMTw  yylval->opcode = opREMTw; return OP2;
-REMTz  yylval->opcode = opREMTz; return OP2;
+"ILL"  yylval->opcode = opILL; return OP0R;
+"HALT"  yylval->opcode = opHALT; return OP0R;
+"NOP"  yylval->opcode = opNOP; return OP0R;
+"JI"  yylval->opcode = opJI; return OP0RO;
+"BREAK"  yylval->opcode = opBREAK; return OP0R;
+"GC"  yylval->opcode = opGC; return OP0R;
+"PRINTrr"  yylval->opcode = opPRINTrr; return OP0R;
+"TRACE"  yylval->opcode = opTRACE; return OP0R;
+"LDGk"  yylval->opcode = opLDGk; return OP1R;
+"LDGh"  yylval->opcode = opLDGh; return OP1R;
+"LDLn"  yylval->opcode = opLDLn; return OP1RN;
+"LDLs"  yylval->opcode = opLDLs; return OP1RS;
+"LDLz"  yylval->opcode = opLDLz; return OP1RZ;
+"LDRR"  yylval->opcode = opLDRR; return OP1R;
+"INCn"  yylval->opcode = opINCn; return OP1R;
+"INCz"  yylval->opcode = opINCz; return OP1R;
+"DECn"  yylval->opcode = opDECn; return OP1R;
+"DECz"  yylval->opcode = opDECz; return OP1R;
+"POSn"  yylval->opcode = opPOSn; return OP1R;
+"NEGn"  yylval->opcode = opNEGn; return OP1R;
+"NEGz"  yylval->opcode = opNEGz; return OP1R;
+"ABSz"  yylval->opcode = opABSz; return OP1R;
+"MAGz"  yylval->opcode = opMAGz; return OP1R;
+"PRINTn"  yylval->opcode = opPRINTn; return OP1R;
+"PRINTs"  yylval->opcode = opPRINTs; return OP1R;
+"PRINTz"  yylval->opcode = opPRINTz; return OP1R;
+"MOV"  yylval->opcode = opMOV; return OP2R;
+"CMPn"  yylval->opcode = opCMPn; return OP2R;
+"CMPs"  yylval->opcode = opCMPs; return OP2R;
+"CMPz"  yylval->opcode = opCMPz; return OP2R;
+"EQn"  yylval->opcode = opEQn; return OP2R;
+"EQz"  yylval->opcode = opEQz; return OP2R;
+"GTEn"  yylval->opcode = opGTEn; return OP2R;
+"GTEz"  yylval->opcode = opGTEz; return OP2R;
+"LTn"  yylval->opcode = opLTn; return OP2R;
+"LTz"  yylval->opcode = opLTz; return OP2R;
+"NEn"  yylval->opcode = opNEn; return OP2R;
+"NEz"  yylval->opcode = opNEz; return OP2R;
+"ADDn"  yylval->opcode = opADDn; return OP2R;
+"ADDz"  yylval->opcode = opADDz; return OP2R;
+"SUBn"  yylval->opcode = opSUBn; return OP2R;
+"SUBz"  yylval->opcode = opSUBz; return OP2R;
+"MULn"  yylval->opcode = opMULn; return OP2R;
+"MULz"  yylval->opcode = opMULz; return OP2R;
+"DIVTn"  yylval->opcode = opDIVTn; return OP2R;
+"DIVTz"  yylval->opcode = opDIVTz; return OP2R;
+"REMTn"  yylval->opcode = opREMTn; return OP2R;
+"REMTz"  yylval->opcode = opREMTz; return OP2R;
+"LDI.fd"  yylval->opcode = opLDI_fd; return OP1FF;
+"NEG.fd"  yylval->opcode = opNEG_fd; return OP1F;
+"PRN.fd"  yylval->opcode = opPRN_fd; return OP1F;
+"ZERO.fd"  yylval->opcode = opZERO_fd; return OP1F;
+"ADD.fd"  yylval->opcode = opADD_fd; return OP2F;
+"SUB.fd"  yylval->opcode = opSUB_fd; return OP2F;
+"MUL.fd"  yylval->opcode = opMUL_fd; return OP2F;
+"DIV.fd"  yylval->opcode = opDIV_fd; return OP2F;
+"MOV.fd"  yylval->opcode = opMOV_fd; return OP2F;
+"ZERO.w"  yylval->opcode = opZERO_w; return OP1W;
+"ONE.w"  yylval->opcode = opONE_w; return OP1W;
+"TWO.w"  yylval->opcode = opTWO_w; return OP1W;
+"EQZ.w"  yylval->opcode = opEQZ_w; return OP1W;
+"NEZ.w"  yylval->opcode = opNEZ_w; return OP1W;
+"DEC.w"  yylval->opcode = opDEC_w; return OP1W;
+"INC.w"  yylval->opcode = opINC_w; return OP1W;
+"NEG.o"  yylval->opcode = opNEG_o; return OP1W;
+"NOT.w"  yylval->opcode = opNOT_w; return OP1W;
+"NOTL.w"  yylval->opcode = opNOTL_w; return OP1W;
+"POPCT.w"  yylval->opcode = opPOPCT_w; return OP1W;
+"JR.o"  yylval->opcode = opJR_o; return OP1W;
+"JRD.o"  yylval->opcode = opJRD_o; return OP1W;
+"LDI.w"  yylval->opcode = opLDI_w; return OP1WW;
+"LDRR.w"  yylval->opcode = opLDRR_w; return OP1W;
+"PRN.c"  yylval->opcode = opPRN_c; return OP1W;
+"PRN.o"  yylval->opcode = opPRN_o; return OP1W;
+"PRN.w"  yylval->opcode = opPRN_w; return OP1W;
+"EQR.w"  yylval->opcode = opEQR_w; return OP2W;
+"NER.w"  yylval->opcode = opNER_w; return OP2W;
+"LTR.o"  yylval->opcode = opLTR_o; return OP2W;
+"LTR.w"  yylval->opcode = opLTR_w; return OP2W;
+"GTER.o"  yylval->opcode = opGTER_o; return OP2W;
+"GTER.w"  yylval->opcode = opGTER_w; return OP2W;
+"ADD.w"  yylval->opcode = opADD_w; return OP2W;
+"SUB.w"  yylval->opcode = opSUB_w; return OP2W;
+"MUL.w"  yylval->opcode = opMUL_w; return OP2W;
+"DIVT.o"  yylval->opcode = opDIVT_o; return OP2W;
+"DIVT.w"  yylval->opcode = opDIVT_w; return OP2W;
+"REMT.o"  yylval->opcode = opREMT_o; return OP2W;
+"REMT.w"  yylval->opcode = opREMT_w; return OP2W;
+"ANDL.w"  yylval->opcode = opANDL_w; return OP2W;
+"AND.w"  yylval->opcode = opAND_w; return OP2W;
+"ASR.w"  yylval->opcode = opASR_w; return OP2W;
+"LSL.w"  yylval->opcode = opLSL_w; return OP2W;
+"LSR.w"  yylval->opcode = opLSR_w; return OP2W;
+"ORL.w"  yylval->opcode = opORL_w; return OP2W;
+"OR.w"  yylval->opcode = opOR_w; return OP2W;
+"XOR.w"  yylval->opcode = opXOR_w; return OP2W;
+"MOV.w"  yylval->opcode = opMOV_w; return OP2W;
+"EQZ.wn"  yylval->opcode = opEQZ_wn; return OP2WN;
+"NEZ.wn"  yylval->opcode = opNEZ_wn; return OP2WN;
 
 	/*
 	 * Arguments.
 	 */
 {REG}	{ yylval->reg = isdigit(yytext[1]) ? yytext[1] - '0' :
 		yytext[1] - 'A' + 10; return REG; }
+{REGFD}	{ yylval->reg = yytext[2] - '0'; return REGFD; }
+{REGW}	{ yylval->reg = yytext[1] - '0'; return REGW; }
 
 	/*
 	 * Must come after register lexing.

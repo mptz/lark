@@ -1,0 +1,47 @@
+|* Computed branches
+
+	|* basic branch, loading an immediate word
+	LDI.w	W0, #1
+	JRD.o	W0
+	JI	basic0
+	JI	basic1
+	JI	basic2
+	ILL
+basic0:	LDLs	RE, "basic0\n"
+	PRINTs	RE
+	JI	done0
+basic1:	LDLs	RE, "basic1\n"
+	PRINTs	RE		|* expected: basic1
+	JI	done0
+basic2:	LDLs	RE, "basic2\n"
+	PRINTs	RE
+	JI	done0
+done0:	LDLs	RE, "done0\n"
+	PRINTs	RE		|* expected: done0
+
+	|* branch based on a comparison
+	LDI.w	W3, #77
+	LDI.w	W4, #88
+	MOV.w	W5, W3
+	LTR.w	W5, W4
+	JRD.o	W5
+	JI	lt0
+	JI	lt1
+	ILL
+lt0:	LDLs	RE, "greater or equal\n"
+	PRINTs	RE
+	JI	done1
+lt1:	LDLs	RE, "less than\n"
+	PRINTs	RE		|* expected: less than
+	JI	done1
+done1:	LDLs	RE, "done1\n"
+	PRINTs	RE		|* expected: done1
+
+	|* negative branching... tricky, recall JI branches
+	|* by 2 * register value to allow for intermediates,
+	|* and the base for the branch is the following insn.
+
+	|* XXX waiting to implement until we have offset
+	|* instructions to work with negative numbers.
+
+	HALT

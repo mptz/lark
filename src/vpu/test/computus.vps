@@ -1,12 +1,97 @@
-	|* R0..R3 are numeric scratch registers
-	LDLz	R4, +1961	|* Year
-				|* a = Y mod 4
+	|* R0, R1 are numeric scratch registers
+	LDLz	R2, +1961	|* R2 == Y	year
+	MOV	R3, R2		|* R3 := Y
+	LDLz	R1, +19
+	REMTz	R3, R1		|* R3 == a	Y mod 19
+	MOV	R4, R2		|* R4 := Y
+	LDLz	R0, +100
+	DIVTz	R4, R0		|* R4 == b	Y div 100
+	MOV	R5, R2		|* R5 := Y
+	REMTz	R5, R0		|* R5 == c	Y mod 100
 	LDLz	R0, +4
-	
-	LDLz	R1, 100		|* Serves as counter and multiplier
-	LDLz	R2, 1 		|* Result accumulator
+	MOV	R6, R4		|* R6 := b
+	DIVTz	R6, R0		|* R6 == d	b div 4
+	MOV	R7, R4		|* R7 := b
+	REMTz	R7, R0		|* R7 == e	b mod 4
+	MOV	R8, R4		|* R8 := b
+	LDLz	R0, +8
+	ADDz	R8, R0		|* R8 += 8
+	LDLz	R0, +25
+	DIVTz	R8, R0		|* R8 == f	(b + 8) div 25
+	MOV	R9, R4		|* R9 := b
+	SUBz	R9, R8		|* R9 -= f
+	INCz	R9		|* R9 += 1
+	LDLz	R0, +3
+	DIVTz	R9, R0		|* R9 == g	(b - f + 1) div 3
+				|* done with f, R8 now free
+	MOV	R8, R3		|* R8 := a
+	MULz	R8, R1		|* R8 *= 19
+	ADDz	R8, R4		|* R8 += b
+	SUBz	R8, R6		|* R8 -= d
+	SUBz	R8, R9		|* R8 -= g
+	LDLz	R0, +15
+	ADDz	R8, R0		|* R8 += 15
+	LDLz	R0, +30
+	REMTz	R8, R0		|* R8 == h	(19a + b - d - g + 15) mod 30
+				|* done with b, R4 now free
+				|* done with d, R6 now free
+				|* done with g, R9 now free
+	LDLz	R0, +4
+	MOV	R4, R5		|* R4 := c
+	DIVTz	R4, R0		|* R4 == i	c div 4
+	MOV	R6, R5		|* R6 := c
+	REMTz	R6, R0		|* R6 == k	c mod 4
+				|* done with c, R5 now free
+	MOV	R9, R7		|* R9 := e
+	ADDz	R9, R4		|* R9 += i
+	LDLz	R1, +2
+	MULz	R9, R1		|* R9 == 2 * (e + i)
+	LDLz	R0, +32
+	ADDz	R9, R0		|* R9 += 32
+	SUBz	R9, R8		|* R9 -= h
+	SUBz	R9, R6		|* R9 -= k
+	LDLz	R0, +7
+	REMTz	R9, R0		|* R9 == l	(32 + 2e + 2i - h - k) mod 7
+				|* done with e, R7 now free
+				|* done with i, R4 now free
+				|* done with k, R6 now free
+	MOV	R5, R9		|* R5 := l
+	MULz	R5, R1		|* R5 *= 2
+	ADDz	R5, R8		|* R5 += h
+	LDLz	R0, +11
+	MULz	R5, R0		|* R5 *= 11
+	ADDz	R5, R3		|* R5 += a
+	LDLz	R0, +451
+	DIVTz	R5, R0		|* R5 == m	(a + 11h + 22l) div 451
+				|* done with a, R3 now free
 
-	PRINTz	R4		|* Print result
-	LDLc	RF, '\n'
-	PRINTc	RF		|* Print EOL
+	LDLz	R7, -7
+	LDLz	R4, +114
+	LDLz	R6, +31
+	MOV	R3, R5		|* R3 := m
+	MULz	R3, R7		|* R3 *= -7
+	ADDz	R3, R8		|* R3 += h
+	ADDz	R3, R9		|* R3 += l
+	ADDz	R3, R4		|* R3 += 114
+	MOV	RA, R3		|* RA := (h + l - 7m + 114)
+	DIVTz	R3, R6		|* R3 == month	(h + l - 7m + 114) div 31
+	REMTz	RA, R6		|* RA %= 31
+	INCz	RA		|* RA == day	((h + l - 7m + 114) div 31) + 1
+
+	LDI.w	W7, '\n'
+	LDLs	RE, "Year: "
+	PRINTs	RE
+	MAGz	R2		|* year to natural number
+	PRINTn	R2
+	PRN.c	W7
+	LDLs	RE, "Month: "
+	PRINTs	RE
+	MAGz	R3		|* month to natural number
+	PRINTn	R3
+	PRN.c	W7
+	LDLs	RE, "Day: "
+	PRINTs	RE
+	MAGz	RA		|* day to natural number
+	PRINTn	RA
+	PRN.c	W7
 	HALT

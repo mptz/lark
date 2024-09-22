@@ -24,48 +24,28 @@
 use strict;
 use warnings;
 
-my @ops0_core = (
-	'ILL',		# illegal instruction
-	'NOP',		# no-operation
-	'HALT',		# halt VM execution
-);
-
 my @ops0_debug = (
 	'BREAK',	# debugger breakpoint
 	'GC',		# run garbage collector
+	'PRINTrr',	# print XXX temp
 	'TRACE',	# trace output
 );
 
-my @ops0_jump = (
-	'JMP',		# jump, unconditional
-	'JEQ',		# jump on equality
-	'JNE',		# jump on inequality
-	'JLT',		# jump on less-than
-	'JGE',		# jump on greater-than-or-equal
-);
+# VPU terminology (there's no global standard for this):
+# - A 'branch' is a nonsequential instructions.
+# - A 'jump' is an unconditional branch.
+# Branch address can be specified via immediate or register.
+# Immediate branches are all IP-relative to support PIC.
+# Register branches can be IP-relative or absolute.
 
 my @ops1_load = (
+	'LDG',		# load global
 	'LDL',		# load literal
-	'ZERO',		# load zero
 );
 
-# These should potentially be renamed JMPI (indirect) etc.
+# Branches with register operands
 my @ops1_branch = (
-	'JMPI',		# jump, indirect via register
-	'BEQ',		# branch on equality
-	'BNE',		# branch on inequality
-	'BLT',		# branch on less-than
-	'BLE',		# branch on less-than-or-equal
-	'BGT',		# branch on greater-than
-	'BGE',		# branch on greater-than-or-equal
 	'LDRR',		# load result register into GP register
-);
-
-my @ops1_bool = (
-	'ASR',		# arithmetic shift right
-	'LSL',		# logical shift left
-	'LSR',		# logical shift right
-	'NOT',		# bitwise not
 );
 
 my @ops1_arith = (
@@ -83,22 +63,23 @@ my @ops1_io = (
 
 my @ops2_reg = (
 	'MOV',		# move value from one register to another
-	'CMP',		# compare values in registers
+	'CMP',		# compare values in registers (3-way compare)
 );
 
-# XXX need left & right shift instructions
-# XXX need logical AND & OR?
-my @ops2_bool = (
-	'AND',		# bitwise AND
-	'OR',		# bitwise OR
-	'XOR',		# bitwise XOR
+my @ops2_cmp_eq = (
+	'EQ',		# test for equality
+	'GTE',		# greater than or equal to
+);
+
+my @ops2_cmp_neq = (
+	'LT',		# less than
+	'NE',		# test for inequality
 );
 
 my @ops2_arith = (
 	'ADD',		# addition
 	'SUB',		# subtraction
 	'MUL',		# multiplication
-	'DIV',		# division (used for floating-point only)
 	'DIVT',		# integer division, truncate towards zero
 			# floor towards -Inf not implemented yet; more
 			# mathematical but less common in H/W
@@ -106,53 +87,152 @@ my @ops2_arith = (
 );
 
 #
-# For branching operations, we dispatch to the current instruction
-# (which has presumably been modified by the operation itself)
-# rather than to the next one.
+# New instruction format starts here
 #
-# XXX might get rid of this... actually want JMP #+0 to go to the
-# instruction following the current one, allowing zero-based multiway
-# dispatch.
-#
-my %ops_branching = ();
-$ops_branching{$_} = 1 foreach (
-	'BEQ', 'BNE', 'BLT', 'BLE', 'BGT', 'BGE',
+
+# nullary operations; no registers
+my @ops0 = (
+	'ILL',		# illegal instruction
+	'HALT',		# halt VM execution
+	'NOP',		# no-operation
+	'JI',		# jump relative immediate, unconditional
 );
 
-my $fl_all = 'cfnoswz';
-my $fl_bits = 'w';
-my $fl_integral = 'nowz';
-my $fl_numeric = 'fnowz';
-my $fl_signed = 'foz';
+# unary operations on float64 registers
+my @ops1_float = (
+	'LDI.fd',	# load immmediate float
+	'NEG.fd',	# negate float
+	'PRN.fd',	# print float
+	'ZERO.fd',	# load constant 0.0
+);
+
+# binary operations on float64 registers
+my @ops2_float = (
+	'ADD.fd',	# double-precision addition
+	'SUB.fd',	# double-precision subtraction
+	'MUL.fd',	# double-precision multiplication
+	'DIV.fd',	# double-precision division
+	'MOV.fd',	# move float between registers
+);
+
+# unary operations on word registers
+# XXX need CLZ, others?
+my @ops1_word = (
+	# constant loads
+	'ZERO.w',	# load constant 0; redundant with XOR.w Wn Wn
+	'ONE.w',	# load constant 1
+	'TWO.w',	# load constant 2
+	# comparison operations
+	'EQZ.w',	# equal to zero?
+	'NEZ.w',	# not equal to zero?
+	# arithmetic operations
+	'DEC.w',	# signed/unsigned decrement
+	'INC.w',	# signed/unsigned increment
+	'NEG.o',	# negate offset
+	# bitwise & boolean operations
+	'NOT.w',	# bitwise not
+	'NOTL.w',	# logical not
+	'POPCT.w',	# population count
+	# jump operations
+	'JR.o',		# relative jump (ip += wN)
+	'JRD.o',	# relative jump (ip += wN * 2) for dispatch tables
+	# other operations
+	'LDI.w',	# load immediate word
+	'LDRR.w',	# load result register
+	'PRN.c',	# print character
+	'PRN.o',	# print offset
+	'PRN.w',	# print word
+);
+
+# binary operations on word registers
+# XXX need left & right shift instructions
+my @ops2_word = (
+	# comparison operations
+	'EQR.w',	# word equality, stored in target register
+	'NER.w',	# word inequality, stored in target register
+	'LTR.o',	# signed integer less-than, to target
+	'LTR.w',	# unsigned integer less-than, to target
+	'GTER.o',	# signed integer greater-than-or-equal-to, to target
+	'GTER.w',	# unsigned integer greater-than-or-equal-to, to target
+	# arithmetic operations
+	'ADD.w',	# unsigned integer addition
+	'SUB.w',	# unsigned integer subtraction
+	'MUL.w',	# unsigned integer multiplication
+	'DIVT.o',	# signed integer division, truncated towards zero
+	'DIVT.w',	# unsigned integer division, truncated towards zero
+	'REMT.o',	# remainder of truncated unsigned division as in DIVT.o
+	'REMT.w',	# remainder of truncated unsigned division as in DIVT.w
+	# bitwise & boolean operations
+	'ANDL.w',	# logical AND
+	'AND.w',	# bitwise AND
+	'ASR.w',	# arithmetic shift right
+	'LSL.w',	# logical shift left
+	'LSR.w',	# logical shift right
+	'ORL.w',	# logical OR
+	'OR.w',		# bitwise OR
+	'XOR.w',	# bitwise XOR
+	# other operations
+	'MOV.w',	# move between registers
+);
+
+my @ops2_word_nat = (
+	'EQZ.wn',	# nat equal to zero?
+	'NEZ.wn',	# nat not equal to zero?
+);
+
+#
+# For some branching operations (the ones not relative to the instruction
+# pointer), we dispatch to the current instruction--which has presumably
+# been modified by the operation itself--rather than to the next one.
+# We don't use this technique for all branches--the standard use of 'NEXT'
+# allows 0-based IP-relative jumps.
+#
+my %ops_absolute = ();
+$ops_absolute{$_} = 1 foreach (
+	'JA.w'		# XXX obsolete now
+);
+
+#
+# For some binary operations, like comparisons and moves, it doesn't make
+# sense to generate implementations with identical source & target registers.
+#
+my %ops_distinct = ();
+$ops_distinct{$_} = 1 foreach (
+	'EQR.w', 'NER.w', 'LTR.o', 'LTR.w', 'GTER.o', 'GTER.w',
+	'AND.w', 'OR.w',
+	'MOV.fd', 'MOV.w',
+);
+
+my $fl_all = 'nsz';
+my $fl_integral = 'nz';
+my $fl_numeric = 'nz';
+my $fl_signed = 'z';
 
 my %ops_flavors = (
 
 	'ABS' =>	'z',		# for now, should be all signed
 	'ADD' =>	$fl_numeric,
-	'AND' =>	$fl_bits,
-	'ANDL' =>	$fl_bits,
 	'CMP' =>	$fl_all,
 	'DEC' =>	$fl_integral,
-	'DIV' =>	'f',
 	'DIVT' =>	$fl_integral,
+	'EQ' =>		$fl_numeric,
+	'GTE' =>	$fl_numeric,
 	'INC' =>	$fl_integral,
+	'LDG' =>	'kh',
 	'LDL' =>	$fl_all,
+	'LIT' =>	$fl_all,
+	'LT' =>		$fl_numeric,
 	'MAG' =>	'z',		# for now, should be all signed
 	'MUL' =>	$fl_numeric,
-	'NEG' =>	'fonz',
-	'OR' =>		$fl_bits,
-	'ORL' =>	$fl_bits,
+	'NEG' =>	'nz',
+	'NE' =>		$fl_numeric,
 	'POS' =>	'n',
-	'PRINT' =>	$fl_all,
+	'PRINT' =>	$fl_all,	# XXX temp
 	'REMT' =>	$fl_integral,
 	'SUB' =>	$fl_numeric,
-	'XOR' =>	$fl_bits,
-	'ZERO' =>	'fow',	# XXX need constant nat zero
 
 );
 
-my @regs = ('0', '1', '2', '3', '4', '5', '6', '7',
-	    '8', '9', 'A', 'B', 'C', 'D', 'E', 'F');
 my %regbit = (
 	'0' => 2** 0, '1' => 2** 1, '2' => 2** 2, '3' => 2** 3,
 	'4' => 2** 4, '5' => 2** 5, '6' => 2** 6, '7' => 2** 7,
@@ -165,6 +245,10 @@ my %regnum = (
         '8' =>  8, '9' =>  9, 'A' => 10, 'B' => 11,
 	'C' => 12, 'D' => 13, 'E' => 14, 'F' => 15,
 );
+
+my $regsr = "0123456789ABCDEF";
+my $regsfd = "01234567";
+my $regsw =  "01234567";
 
 sub expand_flavors {
 	my @result = ();
@@ -180,70 +264,106 @@ sub expand_flavors {
 	return @result;
 }
 
-my @ops0 = expand_flavors (@ops0_core, @ops0_debug, @ops0_jump);
-my @ops1 = expand_flavors (@ops1_load, @ops1_branch, @ops1_bool,
+my @ops0_legacy = expand_flavors (@ops0_debug);
+my @ops1 = expand_flavors (@ops1_load, @ops1_branch,
 			   @ops1_arith, @ops1_io);
-my @ops2 = expand_flavors (@ops2_reg, @ops2_bool, @ops2_arith);
-my @ops = (@ops0, @ops1, @ops2);
+my @ops2 = expand_flavors (@ops2_reg, @ops2_cmp_eq, @ops2_cmp_neq,
+			   @ops2_arith);
+my @ops_legacy = (@ops0_legacy, @ops1, @ops2);
+
+my @ops_null = (@ops0, @ops0_legacy);
+my @ops_float = (@ops1_float, @ops2_float);
+my @ops_word = (@ops1_word, @ops2_word);
+
+my @ops_all = (@ops_null, @ops1, @ops2, @ops_float, @ops_word, @ops2_word_nat);
+my @ops0_all = (@ops_null);
+my @ops1_all = (@ops1, @ops1_float, @ops1_word);
+my @ops2_all = (@ops2, @ops2_float, @ops2_word, @ops2_word_nat);
+
+# Replace '.' with '_' in opcodes for C language compability
+my %op_labels = map { $_ => s/\./_/r } @ops_all;
 
 my %opcodes = ();
 {
 	my $nextcode = 0;
-	$opcodes{$_} = $nextcode++ foreach (@ops);
+	$opcodes{$_} = $nextcode++ foreach (@ops_all);
 }
 
 my %op_arities = ();
-$op_arities{$_} = 0 foreach (@ops0);
-$op_arities{$_} = 1 foreach (@ops1);
-$op_arities{$_} = 2 foreach (@ops2);
+$op_arities{$_} = 0 foreach (@ops0_all);
+$op_arities{$_} = 1 foreach (@ops1_all);
+$op_arities{$_} = 2 foreach (@ops2_all);
+
+my %op_regsets = ();
+$op_regsets{$_} = 'F' foreach (@ops_float);
+$op_regsets{$_} = 'W' foreach (@ops_word);
+$op_regsets{$_} = 'WN' foreach (@ops2_word_nat);
+
+my %op_regset1 = ();
+$op_regset1{$_} = $regsfd foreach (@ops_float);
+$op_regset1{$_} = $regsw  foreach (@ops_word, @ops2_word_nat);
+
+my %op_regset2 = ();
+$op_regset2{$_} = $regsfd foreach (@ops_float);
+$op_regset2{$_} = $regsw  foreach (@ops_word);
+
+my %op_selfcompare = ();
+$op_selfcompare{$_} = 'm->rr = 1' foreach (expand_flavors (@ops2_cmp_eq));
+$op_selfcompare{$_} = 'm->rr = 0' foreach (expand_flavors (@ops2_cmp_neq));
 
 my %op_inline_args = (
 
-	'ASR' =>	'w',
-	'JMP' =>	'o',
-	'JEQ' =>	'o',
-	'JNE' =>	'o',
-	'JLT' =>	'o',
-	'JGE' =>	'o',
-	'JMPI' =>	'o',
+	'LITc' =>	'c',
+	'LITn' =>	'n',
+	'LITo' =>	'o',
+	'LITs' =>	's',
+	'LITz' =>	'z',
+
+	'JI' =>		'o',
+
+	# XXX need to add LDG here
 	'LDLc' =>	'c',
 	'LDLd' =>	'w',
-	'LDLf' =>	'w',
+	'LDLg' =>	'w',
 	'LDLn' =>	'n',
 	'LDLo' =>	'o',
 	'LDLs' =>	's',
-	'LDLw' =>	'w',
 	'LDLz' =>	'z',
-	'LSL' =>	'w',
-	'LSR' =>	'w',
-
+	'LDI.fd' =>	'f',
+	'LDI.w' =>	'w',
 );
 
-#
-# Generate labels.
-#
-sub expand_args {
+# Generate switch labels.
+sub labels_op1 {
+	my ($opname, $result) = @_;
+	my $rtgt = $op_regset1{$opname} // $regsr;
+	foreach my $reg1 (split (//, $rtgt)) {
+		push (@$result, "$op_labels{$opname}_R${reg1}");
+	}
+}
+
+sub labels_op2 {
+	my ($opname, $result) = @_;
+	my $rtgt = $op_regset1{$opname} // $regsr;
+	my $rsrc = $op_regset2{$opname} // $regsr;
+	foreach my $reg1 (split (//, $rtgt)) {
+		foreach my $reg2 (split (//, $rsrc)) {
+			next if (($reg1 eq $reg2) && $ops_distinct{$opname});
+			push (@$result, "$op_labels{$opname}_" .
+				        "R${reg1}_R${reg2}");
+		}
+	}
+}
+
+sub get_labels {
 	my @result = ();
-	my ($reg1, $reg2);
 	foreach my $opname (@_) {
 		my $arity = $op_arities{$opname};
 		die unless defined $arity;
-		if ($arity == 0) {
-			push (@result, $opname);
-		} elsif ($arity == 1) {
-			foreach $reg1 (@regs) {
-				push (@result, "${opname}_R${reg1}");
-			}
-		} elsif ($arity == 2) {
-			foreach $reg1 (@regs) {
-				foreach $reg2 (@regs) {
-					push (@result,
-					      "${opname}_R${reg1}_R${reg2}");
-				}
-			}
-		} else {
-			die "Arity undefined for $opname";
-		}
+		if    ($arity == 0) { push (@result, $opname); }
+		elsif ($arity == 1) { labels_op1($opname, \@result); }
+		elsif ($arity == 2) { labels_op2($opname, \@result); }
+		else { die "Arity undefined for $opname"; }
 	}
 	return @result;
 }
@@ -253,35 +373,36 @@ sub expand_args {
 # generating some output files.
 #
 open (my $fhdef, '>', 'src/vpu/opcodes.h') or die;
-printf $fhdef ("#define op$_ 0x%04X\n", $opcodes{$_})
-	foreach (@ops);
+printf $fhdef ("#define op$op_labels{$_} 0x%04X\n", $opcodes{$_})
+	foreach @ops_all;
 close ($fhdef) or die;
 
 open (my $fhnam, '>', 'src/vpu/opnames.c') or die;
-printf $fhnam ("\t\"$_\",\n")
-	foreach (@ops);
+printf $fhnam ("\t\"$_\",\n") foreach @ops_all;
 close ($fhnam) or die;
 
+# The lexer file oplex.l isn't automatically used; paste it into asm.l
+# whenever it's changed (I know...).
+sub lexer_line {
+	my ($opname) = @_;
+	return  "\"$opname\"  " .
+		"yylval->opcode = op$op_labels{$_}; " .
+		"return OP$op_arities{$opname}" .
+		($op_regsets{$opname} // 'R') .
+		uc ($op_inline_args{$opname} // '') .
+		";\n";
+}
+
 open (my $fhlex, '>', 'src/vpu/oplex.l') or die;
-printf $fhlex ("$_  yylval->opcode = op$_; return OP$op_arities{$_}" .
-	       uc ($op_inline_args{$_} // '') . ";\n")
-	foreach (@ops);
+printf $fhlex lexer_line($_) foreach @ops_all;
 close ($fhlex) or die;
 
 open (my $fhlab, '>', 'src/vpu/oplabels.c') or die;
-print $fhlab ('		&&x' . $_ . ",\n") foreach (expand_args (@ops));
+print $fhlab ('		&&x' . $_ . ",\n") foreach (get_labels (@ops_all));
 close ($fhlab) or die;
 
-my $ldl_my_impl = 'm->r{reg1} = (word) *++(m->ip); m->mm ^=  {reg1bit}';
+my $ldl_my_impl = 'm->r{reg1} = (word) *++(m->ip); m->mm |=  {reg1bit}';
 my $ldl_mn_impl = 'm->r{reg1} = (word) *++(m->ip); m->mm &= ~{reg1bit}';
-
-# Some ops are the same for signed/unsigned though (for now) we have
-# different instructions... may revisit.
-my $incow_impl = 'm->r{reg1}++';
-my $decow_impl = 'm->r{reg1}--';
-my $addow_impl = 'm->r{reg1} += m->r{reg2}';
-my $mulow_impl = 'm->r{reg1} *= m->r{reg2}';
-my $subow_impl = 'm->r{reg1} -= m->r{reg2}';
 
 #
 # Some remarks/concerns on the implementation:
@@ -291,99 +412,134 @@ my $subow_impl = 'm->r{reg1} -= m->r{reg2}';
 my %op_impls = (
 
 'ABSz' =>	'm->r{reg1} = (word) int_abs((int_mt) m->r{reg1})',
-'ADDf' =>	'm->r{reg1} = (fpw) ((fpw) m->r{reg1} + (fpw) m->r{reg2})',
 'ADDn' =>	'm->r{reg1} = (word) nat_add((nat_mt) m->r{reg1}, (nat_mt) m->r{reg2})',
-'ADDo' =>	$addow_impl,
-'ADDw' =>	$addow_impl,
 'ADDz' =>	'm->r{reg1} = (word) int_add((int_mt) m->r{reg1}, (int_mt) m->r{reg2})',
-'ANDw' =>	'm->r{reg1} &= m->r{reg2}',
-'ASR' =>	'm->r{reg1} = ((offset) m->r{reg1}) >> (word) *(m->ip++)',
-'BEQ' =>	'if (m->rr == 0) m->ip = (void**) m->r{reg1}; else m->ip++',
-'BNE' =>	'if (m->rr != 0) m->ip = (void**) m->r{reg1}; else m->ip++',
-'BLT' =>	'if (m->rr <  0) m->ip = (void**) m->r{reg1}; else m->ip++',
-'BLE' =>	'if (m->rr <= 0) m->ip = (void**) m->r{reg1}; else m->ip++',
-'BGT' =>	'if (m->rr >  0) m->ip = (void**) m->r{reg1}; else m->ip++',
-'BGE' =>	'if (m->rr >= 0) m->ip = (void**) m->r{reg1}; else m->ip++',
 'BREAK' =>	'panic("Dispatched unimplemented BREAK instruction!\n")',
-'CMPc' =>	'm->rr = m->r{reg1} - m->r{reg2}',
 'CMPf' =>	'm->rr = ((fpw) m->r{reg1} > (fpw) m->r{reg2}) - ((fpw) m->r{reg1} < (fpw) m->r{reg2})',
 'CMPn' =>	'm->rr = nat_cmp((nat_mt) m->r{reg1}, (nat_mt) m->r{reg2})',
-'CMPo' =>	'm->rr = ((offset) m->r{reg1} > (offset) m->r{reg2}) - ((offset) m->r{reg1} < (offset) m->r{reg2})',
 'CMPs' =>	'strcmp3((str_mt) m->r{reg1}, (str_mt) m->r{reg2})',
-'CMPw' =>	'm->rr = m->r{reg1} - m->r{reg2}',
 'CMPz' =>	'm->rr = int_cmp((int_mt) m->r{reg1}, (int_mt) m->r{reg2})',
 'DECn' =>	'm->r{reg1} = (word) nat_dec((nat_mt) m->r{reg1})',
-'DECo' =>	$decow_impl,
-'DECw' =>	$decow_impl,
 'DECz' =>	'm->r{reg1} = (word) int_dec((int_mt) m->r{reg1})',
-'DIVf' =>	'm->r{reg1} = (fpw) ((fpw) m->r{reg1} + (fpw) m->r{reg2})',
 'DIVTn' =>	'm->r{reg1} = (word) nat_divt((nat_mt) m->r{reg1}, (nat_mt) m->r{reg2})',
-'DIVTo' =>	'm->r{reg1} = (offset) ((offset) m->r{reg1} + (offset) m->r{reg2})',
-'DIVTw' =>	'm->r{reg1} /= m->r{reg2}',
 'DIVTz' =>	'm->r{reg1} = (word) int_divt((int_mt) m->r{reg1}, (int_mt) m->r{reg2})',
+'EQf' =>	'm->rr = (fpw) m->r{reg1} == (fpw) m->r{reg2}',
+'EQn' =>	'm->rr = nat_cmp((nat_mt) m->r{reg1}, (nat_mt) m->r{reg2}) == 0',
+'EQo' =>	'm->rr = (offset) m->r{reg1} == (offset) m->r{reg2}',
+'EQz' =>	'm->rr = int_cmp((int_mt) m->r{reg1}, (int_mt) m->r{reg2}) == 0',
 'GC' =>		'heap_force_gc()',
-'HALT' =>	'return',
-'ILL' =>	'panic("Dispatched illegal instruction!\n")',
+'GTEf' =>	'm->rr = (fpw) m->r{reg1} >= (fpw) m->r{reg2}',
+'GTEn' =>	'm->rr = nat_cmp((nat_mt) m->r{reg1}, (nat_mt) m->r{reg2}) >= 0',
+'GTEo' =>	'm->rr = (offset) m->r{reg1} >= (offset) m->r{reg2}',
+'GTEz' =>	'm->rr = int_cmp((int_mt) m->r{reg1}, (int_mt) m->r{reg2}) >= 0',
 'INCn' =>	'm->r{reg1} = (word) nat_inc((nat_mt) m->r{reg1})',
-'INCo' =>	$incow_impl,
-'INCw' =>	$incow_impl,
 'INCz' =>	'm->r{reg1} = (word) int_inc((int_mt) m->r{reg1})',
-'JMP' =>	'm->ip += (word) m->ip[1]',
-'JEQ' =>	'm->ip += m->rr == 0 ? (word) m->ip[1] : 1',
-'JNE' =>	'm->ip += m->rr != 0 ? (word) m->ip[1] : 1',
-'JLT' =>	'm->ip += m->rr <  0 ? (word) m->ip[1] : 1',
-'JGE' =>	'm->ip += m->rr >= 0 ? (word) m->ip[1] : 1',
-'JMPI' =>	'm->ip += m->r{reg1}',	# XXX need addt'l +1 or +2
-'LDLc' =>	$ldl_mn_impl,
+'LDGh' =>	'm->r{reg1} = m->gp[(word) *++(m->ip)]; m->mm |=  {reg1bit}',
+'LDGk' =>	'm->r{reg1} = m->gp[(word) *++(m->ip)]; m->mm &= ~{reg1bit}',
 'LDLd' =>	$ldl_mn_impl,
-'LDLf' =>	$ldl_mn_impl,
 'LDLn' =>	$ldl_my_impl,
-'LDLo' =>	$ldl_mn_impl,
 'LDLs' =>	$ldl_my_impl,
-'LDLw' =>	$ldl_mn_impl,
 'LDLz' =>	$ldl_my_impl,
 'LDRR' =>	'm->r{reg1} = m->rr; m->mm &= ~{reg1bit}',
-'LSL' =>	'm->r{reg1} <<= (word) *(m->ip++)',
-'LSR' =>	'm->r{reg1} >>= (word) *(m->ip++)',
+'LITc' =>	'panic("Dispatched LITc instruction!\n")',
+'LITn' =>	'panic("Dispatched LITn instruction!\n")',
+'LITs' =>	'panic("Dispatched LITs instruction!\n")',
+'LITz' =>	'panic("Dispatched LITz instruction!\n")',
+'LTf' =>	'm->rr = (fpw) m->r{reg1} < (fpw) m->r{reg2}',
+'LTn' =>	'm->rr = nat_cmp((nat_mt) m->r{reg1}, (nat_mt) m->r{reg2}) < 0',
+'LTo' =>	'm->rr = (offset) m->r{reg1} < (offset) m->r{reg2}',
+'LTz' =>	'm->rr = int_cmp((int_mt) m->r{reg1}, (int_mt) m->r{reg2}) < 0',
 'MAGz' =>	'm->r{reg1} = (word) int_mag((int_mt) m->r{reg1})',
 'MOV' =>	'm->r{reg1} = m->r{reg2}; if (m->mm & {reg2bit}) m->mm ^= {reg1bit}; else m->mm &= ~{reg1bit}',
-'MULf' =>	'm->r{reg1} = (fpw) ((fpw) m->r{reg1} * (fpw) m->r{reg2})',
 'MULn' =>	'm->r{reg1} = (word) nat_mul((nat_mt) m->r{reg1}, (nat_mt) m->r{reg2})',
-'MULo' =>	$mulow_impl,
-'MULw' =>	$mulow_impl,
 'MULz' =>	'm->r{reg1} = (word) int_mul((int_mt) m->r{reg1}, (int_mt) m->r{reg2})',
-'NEGf' =>	'm->r{reg1} = (fpw) -(fpw) m->r{reg1}',
 'NEGn' =>	'm->r{reg1} = (word) nat_neg((nat_mt) m->r{reg1})',
-'NEGo' =>	'm->r{reg1} = -(offset) m->r{reg1}',
 'NEGz' =>	'm->r{reg1} = (word) int_neg((int_mt) m->r{reg1})',
-'NOP' =>	'/* do nothing */',
-'NOT' =>	'm->r{reg1} = ~m->r{reg1}',
-'ORw' =>	'm->r{reg1} |= m->r{reg2}',
+'NEf' =>	'm->rr = (fpw) m->r{reg1} != (fpw) m->r{reg2}',
+'NEn' =>	'm->rr = nat_cmp((nat_mt) m->r{reg1}, (nat_mt) m->r{reg2}) != 0',
+'NEo' =>	'm->rr = (offset) m->r{reg1} != (offset) m->r{reg2}',
+'NEz' =>	'm->rr = int_cmp((int_mt) m->r{reg1}, (int_mt) m->r{reg2}) != 0',
 'POSn' =>	'm->r{reg1} = (word) nat_pos((nat_mt) m->r{reg1})',
-'PRINTc' =>	'printf("%c", (int) m->r{reg1})',
-'PRINTf' =>	'printf("%g", (fpw) m->r{reg1})',
 'PRINTn' =>	'{ char *s = nat2str((nat_mt) m->r{reg1}); fputs(s, stdout); free(s); }',
-'PRINTo' =>	'if (0 > (offset) m->r{reg1}) ' .
-		'printf("#-%zu", -(offset) m->r{reg1}); else ' .
-		'printf("#+%zu", m->r{reg1}); ',
+'PRINTrr' =>	'if (0 > (offset) m->rr) ' .
+		'printf("#-%zu", -(offset) m->rr); else ' .
+		'printf("#+%zu", m->rr); ',
 'PRINTs' =>	'fputs((const char *) strdata((str_mt) m->r{reg1}), stdout)',
-'PRINTw' =>	'printf("#%zu", m->r{reg1})',
 'PRINTz' =>	'{ char *s = int2str((int_mt) m->r{reg1}); fputs(s, stdout); free(s); }',
 'REMTn' =>	'm->r{reg1} = (word) nat_remt((nat_mt) m->r{reg1}, (nat_mt) m->r{reg2})',
-'REMTo' =>	'm->r{reg1} = (offset) ((offset) m->r{reg1} % (offset) m->r{reg2})',
-'REMTw' =>	'm->r{reg1} %= m->r{reg2}',
 'REMTz' =>	'm->r{reg1} = (word) int_remt((int_mt) m->r{reg1}, (int_mt) m->r{reg2})',
-'SUBf' =>	'm->r{reg1} = (fpw) ((fpw) m->r{reg1} - (fpw) m->r{reg2})',
 'SUBn' =>	'm->r{reg1} = (word) nat_sub((nat_mt) m->r{reg1}, (nat_mt) m->r{reg2})',
-'SUBo' =>	$subow_impl,
-'SUBw' =>	$subow_impl,
 'SUBz' =>	'm->r{reg1} = (word) int_sub((int_mt) m->r{reg1}, (int_mt) m->r{reg2})',
 'TRACE' =>	'panic("Dispatched unimplemented TRACE instruction!\n")',
-'XORw' =>	'm->r{reg1} ^= m->r{reg2}',
-'ZEROf' =>	'm->r{reg1} = (word) 0.0f; m->mm &= ~{reg1bit}',
-'ZEROo' =>	'm->r{reg1} = 0; m->mm &= ~{reg1bit}',
-'ZEROw' =>	'm->r{reg1} = 0; m->mm &= ~{reg1bit}',
 
+		# XXX temporary; this load will break on 32-bit systems
+		# we'd need 2-insn literals for float64 there
+'LDI.fd' =>	'memcpy(&m->fd{reg1}, ++(m->ip), sizeof (float64))',
+'MOV.fd' =>	'm->fd{reg1} = m->fd{reg2}',
+'NEG.fd' =>	'm->fd{reg1} = -m->fd{reg1}',
+'PRN.fd' =>	'printf("%.20g", (double) m->fd{reg1})',
+'ZERO.fd' =>	'm->fd{reg1} = 0.0f64',
+
+'ADD.fd' =>	'm->fd{reg1} += m->fd{reg2}',
+'SUB.fd' =>	'm->fd{reg1} -= m->fd{reg2}',
+'MUL.fd' =>	'm->fd{reg1} *= m->fd{reg2}',
+'DIV.fd' =>	'm->fd{reg1} /= m->fd{reg2}',
+
+# nullary operations; no registers
+'ILL' =>	'panic("Dispatched illegal instruction!\n")',
+'HALT' =>	'return',
+'NOP' =>	'/* do nothing */',
+'JI' =>		'm->ip += (offset) m->ip[1]',
+
+# unary operations on word registers
+'DEC.w' =>	'--m->w{reg1}',
+'INC.w' =>	'++m->w{reg1}',
+'EQZ.w' =>	'm->w{reg1} = m->w{reg1} == 0',
+'NEZ.w' =>	'm->w{reg1} = m->w{reg1} != 0',
+'JR.o' =>	'm->ip += m->w{reg1}',
+'JRD.o' =>	'm->ip += m->w{reg1} * 2', # * 2 allows dispatch tables w/immeds
+'LDI.w' =>	'm->w{reg1} = (word) *++(m->ip)',
+'LDRR.w' =>	'm->w{reg1} = m->rr',
+'NEG.o' =>	'm->w{reg1} = - (offset) m->w{reg1}',
+'NOTL.w' =>	'm->w{reg1} = !m->w{reg1}',
+'NOT.w' =>	'm->w{reg1} = ~m->w{reg1}',
+'ONE.w' =>	'm->w{reg1} = 1',
+'POPCT.w' =>	'm->w{reg1} = __builtin_popcountl(m->w{reg1})',
+'PRN.c' =>	'printf("%c", (int) m->w{reg1})',
+'PRN.o' =>	'if (0 > (offset) m->w{reg1}) ' .
+		'printf("#-%zu", -(offset) m->w{reg1}); else ' .
+		'printf("#+%zu", m->w{reg1}); ',
+'PRN.w' =>	'printf("#%zu", m->w{reg1})',
+'TWO.w' =>	'm->w{reg1} = 2',
+'ZERO.w' =>	'm->w{reg1} = 0',
+
+# binary operations on word registers
+'ADD.w' =>	'm->w{reg1} += m->w{reg2}',
+'SUB.w' =>	'm->w{reg1} -= m->w{reg2}',
+'MUL.w' =>	'm->w{reg1} *= m->w{reg2}',
+'DIVT.o' =>	'm->w{reg1} = (offset) m->w{reg1} / (offset) m->w{reg2}',
+'DIVT.w' =>	'm->w{reg1} /= m->w{reg2}',
+'REMT.o' =>	'm->w{reg1} = (offset) m->w{reg1} % (offset) m->w{reg2}',
+'REMT.w' =>	'm->w{reg1} %= m->w{reg2}',
+'EQR.w' =>	'm->w{reg1} = m->w{reg1} == m->w{reg2}',
+'NER.w' =>	'm->w{reg1} = m->w{reg1} != m->w{reg2}',
+'LTR.o' =>	'm->w{reg1} = (offset) m->w{reg1} < (offset) m->w{reg2}',
+'LTR.w' =>	'm->w{reg1} = m->w{reg1} <  m->w{reg2}',
+'GTER.o' =>	'm->w{reg1} = (offset) m->w{reg1} >= (offset) m->w{reg2}',
+'GTER.w' =>	'm->w{reg1} = m->w{reg1} >= m->w{reg2}',
+'AND.w' =>	'm->w{reg1} &= m->w{reg2}',
+'ANDL.w' =>	'm->w{reg1} = m->w{reg1} && m->w{reg2}',
+'ASR.w' =>	'm->w{reg1} = (offset) m->w{reg1} >> m->w{reg2}',
+'LSL.w' =>	'm->w{reg1} <<= m->w{reg2}',
+'LSR.w' =>	'm->w{reg1} >>= m->w{reg2}',
+'MOV.w' =>	'm->w{reg1} = m->w{reg2}',
+'OR.w' =>	'm->w{reg1} |= m->w{reg2}',
+'ORL.w' =>	'm->w{reg1} = m->w{reg1} || m->w{reg2}',
+'XOR.w' =>	'm->w{reg1} ^= m->w{reg2}',
+
+# hybrid operations
+'EQZ.wn' =>	'm->w{reg1} =  nat_is_zero((nat_mt) m->r{reg2})',
+'NEZ.wn' =>	'm->w{reg1} = !nat_is_zero((nat_mt) m->r{reg2})',
 );
 
 sub print_impl {
@@ -391,11 +547,18 @@ sub print_impl {
 	my $impl = $op_impls{$opname};
 	die "No implementation for $opname\n" unless defined $impl;
 
-	my $x = 'x' . $opname .
+	# Avoid generating tautological comparisons e.g. for LT R0, R0.
+	# gcc complains about these.  Instead set the result register.
+	if ((defined $reg1) && (defined $reg2) &&
+	    ($reg1 eq $reg2) && (defined $op_selfcompare{$opname})) {
+		$impl = $op_selfcompare{$opname};
+	}
+
+	my $x = 'x' . $op_labels{$opname} .
 		(defined $reg1 ? "_R${reg1}" : '') .
 		(defined $reg2 ? "_R${reg2}" : '') .
 		': ' .  $impl .
-		($ops_branching{$opname} ? "; CURR;\n" : "; NEXT;\n");
+		($ops_absolute{$opname} ? "; CURR;\n" : "; NEXT;\n");
 	if (defined $reg1) {
 		$x =~ s/{reg1}/$reg1/g;
 		$x =~ s/{reg1bit}/$regbit{$reg1}/g;
@@ -410,7 +573,7 @@ sub print_impl {
 sub print_insnargs {
 	my ($fh, $opname) = @_;
 	my $arg = $op_inline_args{$opname} // '0';
-	print $fh ("\t'$arg',\n");
+	print $fh ("\t'$arg',\t/* $opname */\n");
 };
 
 sub print_insncode {
@@ -419,35 +582,55 @@ sub print_insncode {
 	die "No opcode for $opname\n" unless defined $i;
 	$i |= ($regnum{$reg1} << 16) if (defined $reg1);
 	$i |= ($regnum{$reg2} << 24) if (defined $reg2);
-	printf $fh ("\t0x%08X,\n", $i);
+	printf $fh ("\t0x%08X,	/* $opcodes{$opname}\t$opname */\n", $i);
 };
 
 open (my $fhimp, '>', 'src/vpu/opimpls.c') or die;
 open (my $fharg, '>', 'src/vpu/opargs.c') or die;
 open (my $fhico, '>', 'src/vpu/insncodes.c') or die;
-foreach my $opname (@ops) {
-	my $arity = $op_arities{$opname};
-	die "No arity for $opname\n" unless defined $arity;
-	if ($arity == 0) {
+
+sub print_op0 {
+	my ($opname) = @_;
+	print_insnargs ($fharg, $opname);
+	print_impl ($fhimp, $opname);
+	print_insncode ($fhico, $opname);
+}
+
+sub print_op1 {
+	my ($opname) = @_;
+	foreach my $reg1 (split (//, $op_regset1{$opname} // $regsr)) {
 		print_insnargs ($fharg, $opname);
-		print_impl ($fhimp, $opname);
-		print_insncode ($fhico, $opname);
-	} elsif ($arity == 1) {
-		print_insnargs ($fharg, $opname) foreach (@regs);
-		print_impl ($fhimp, $opname, $_) foreach (@regs);
-		print_insncode ($fhico, $opname, $_) foreach (@regs);
-	} elsif ($arity == 2) {
-		foreach my $r1 (@regs) {
-			foreach my $r2 (@regs) {
-				print_insnargs ($fharg, $opname);
-				print_impl ($fhimp, $opname, $r1, $r2);
-				print_insncode ($fhico, $opname, $r1, $r2);
-			}
-		}
-	} else {
-		die "Invalid arity for $opname\n";
+		print_impl ($fhimp, $opname, $reg1);
+		print_insncode ($fhico, $opname, $reg1);
 	}
 }
+
+sub print_op2 {
+	my ($opname) = @_;
+	my $rtgt = $op_regset1{$opname} // $regsr;
+	my $rsrc = $op_regset2{$opname} // $regsr;
+	foreach my $reg1 (split (//, $rtgt)) {
+		foreach my $reg2 (split (//, $rsrc)) {
+			next if (($reg1 eq $reg2) && $ops_distinct{$opname});
+			print_insnargs ($fharg, $opname);
+			print_impl ($fhimp, $opname, $reg1, $reg2);
+			print_insncode ($fhico, $opname, $reg1, $reg2);
+		}
+	}
+}
+
+sub print_op {
+	my ($opname) = @_;
+	my $arity = $op_arities{$opname};
+	die unless defined $arity;
+	if    ($arity == 0) { print_op0 ($opname); }
+	elsif ($arity == 1) { print_op1 ($opname); }
+	elsif ($arity == 2) { print_op2 ($opname); }
+	else { die "Arity undefined for $opname"; }
+}
+
+print_op ($_) foreach @ops_all;
+
 close ($fhimp) or die;
 close ($fharg) or die;
 close ($fhico) or die;
