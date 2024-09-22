@@ -159,14 +159,14 @@ static void trace_eval(enum eval_dir dir, unsigned depth,
 }
 
 /*
- * Reduction proceeds left-to-right then right-to-left.  Each pass has
+ * Reduction proceeds right-to-left then left-to-right.  Each pass has
  * both a primary and a secondary function:
  *
- * Left-to-right: 1) beta reduction; 2) disintermediating renames.
- * Right-to-left: 1) reducing under abstractions; 2) garbage collection.
+ * Right-to-left: 1) beta reduction; 2) disintermediating renames.
+ * Left-to-right: 1) reducing under abstractions; 2) garbage collection.
  *
  * Descent into an abstraction is a recursive traversal, i.e. we echo
- * left-to-right then right-to-level traversals on the abstraction body.
+ * right-to-left then left-to-right traversals on the abstraction body.
  */
 struct node *reduce(struct node *headl)
 {
