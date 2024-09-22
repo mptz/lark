@@ -448,3 +448,18 @@ base64_finish_encode(struct base64_state *state,
 	dst[5] = '\n';
 	return count;
 }
+
+void base64_convert(unsigned long n, void *dst, size_t dstsize)
+{
+	unsigned char *ptr = dst;
+	do {
+		if (!dstsize--) goto panic;
+		*ptr++ = encode_table[n % 64];
+		n /= 64;
+	} while (n);
+	if (!dstsize) goto panic;
+	*ptr++ = '\0';
+	return;
+panic:
+	panic("Output buffer too small!\n");
+}

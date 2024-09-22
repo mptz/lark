@@ -87,23 +87,6 @@ base64_stream(struct base64_state *state, void *dst, size_t dstsize,
 	      const void *src, size_t srcsize);
 
 /*
- * These stateless variants always completely consume their input
- * provided the output buffer size is ceil(4/3) the input buffer
- * size (when encoding) or ceil(3/4) the input buffer size (for
- * decoding).  If wrapping is enabled when encoding, the number
- * could increase by one newline per line of encoded data (line
- * length depends on the wrap column).
- *
- * They return the number of bytes written into the destination
- * buffer, or (size_t) -1 if the destination buffer was not large
- * enough to hold the decoded/encoded version of the given data.
- */
-extern size_t
-base64_decode(void *dst, size_t dstsize, const void *src, size_t srcsize);
-extern size_t
-base64_encode(void *dst, size_t dstsize, const void *src, size_t srcsize);
-
-/*
  * Get the number of source bytes consumed in the last call to
  * base64_stream().  The return value of that function is the number
  * of destination bytes written.
@@ -135,5 +118,33 @@ base64_stream_consumed(const struct base64_state *state)
  */
 extern size_t
 base64_stream_finish(struct base64_state *state, void *dst, size_t dstsize);
+
+/*
+ * These stateless variants always completely consume their input
+ * provided the output buffer size is ceil(4/3) the input buffer
+ * size (when encoding) or ceil(3/4) the input buffer size (for
+ * decoding).  If wrapping is enabled when encoding, the number
+ * could increase by one newline per line of encoded data (line
+ * length depends on the wrap column).
+ *
+ * They return the number of bytes written into the destination
+ * buffer, or (size_t) -1 if the destination buffer was not large
+ * enough to hold the decoded/encoded version of the given data.
+ */
+extern size_t
+base64_decode(void *dst, size_t dstsize, const void *src, size_t srcsize);
+extern size_t
+base64_encode(void *dst, size_t dstsize, const void *src, size_t srcsize);
+
+/*
+ * Another stateless variant--this converts an unsigned long to a
+ * little-endian base64 string, i.e. the least-significant base64
+ * digit comes first.  The supplied buffer must be large enough,
+ * otherwise we panic.  We NUL-terminate the buffer.
+ */
+#define BASE64_CONVERT_BUFSIZE 12
+
+extern void
+base64_convert(unsigned long n, void *dst, size_t dstsize);
 
 #endif /* LARK_UTIL_BASE64_H */
