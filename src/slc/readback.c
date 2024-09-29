@@ -21,8 +21,10 @@
  */
 
 #include <assert.h>
+#include <stdlib.h>
 #include <string.h>
 
+#include <util/memutil.h>
 #include <util/message.h>
 #include <util/wordbuf.h>
 
@@ -36,17 +38,32 @@
  * this makes testing fragile.  Should come up with a more stable approach.
  *	https://github.com/mptz/lark/issues/38
  */
+#define MAX_SYMBOL_SIZE 256
+
 static symbol_mt fresh_name(symbol_mt name, const struct wordbuf *names)
 {
 	size_t i, bound;
-	if (env_test(name))
-		goto freshen;
-	for (i = 0, bound = wordbuf_used(names); i < bound; ++i)
-		if (wordbuf_at(names, i) == name)
+	while (1) {
+		if (env_test(name))
 			goto freshen;
-	return name;
-freshen:
-	return symtab_fresh(name);
+		for (i = 0, bound = wordbuf_used(names); i < bound; ++i)
+			if (wordbuf_at(names, i) == name)
+				goto freshen;
+		return name;
+	freshen:
+		const char *last = symtab_lookup(name);
+		if (*last == '\0')
+			panic("Empty symbol in fresh_name\n");
+		char *next = xmalloc(strlen(last) + 2),
+		     *p = stpcpy(next, last) - 1;
+		assert(p >= next);	/* verified above name is not empty */
+		if (*p >= 'A' && *p < 'Z')
+			*p += 1;
+		else
+			*++p = 'A', *++p = '\0';
+		name = symtab_intern(next);
+		free(next);
+	}
 }
 
 static struct form *readback_term(const struct term *term,
