@@ -93,10 +93,25 @@ TermFix(size_t nformals, symbol_mt *formals,
 }
 
 struct term *
+TermNil(void)
+{
+	return term_alloc(TERM_NIL);
+}
+
+struct term *
 TermNum(double num)
 {
 	struct term *term = term_alloc(TERM_NUM);
 	term->num = num;
+	return term;
+}
+
+struct term *
+TermPair(struct term *car, struct term *cdr)
+{
+	struct term *term = term_alloc(TERM_PAIR);
+	term->pair.car = car;
+	term->pair.cdr = cdr;
 	return term;
 }
 
@@ -130,7 +145,7 @@ void term_print(const struct term *term)
 		for (size_t i = 0; i < term->abs.nformals; ++i)
 			printf("%s%s", i > 0 ? ", " : "",
 			       symtab_lookup(term->abs.formals[i]));
-		putchar('?');
+		putchar('.');
 		for (size_t i = 0; i < term->abs.nbodies; ++i) {
 			fputs(i > 0 ? ", " : " ", stdout);
 			term_print(term->abs.bodies[i]);
@@ -163,24 +178,34 @@ void term_print(const struct term *term)
 		for (size_t i = 1; i < term->abs.nformals; ++i)
 			printf("%s%s", i > 1 ? ", " : "",
 			       symtab_lookup(term->abs.formals[i]));
-		putchar('?');
+		putchar('.');
 		for (size_t i = 0; i < term->abs.nbodies; ++i) {
 			fputs(i > 0 ? ", " : " ", stdout);
 			term_print(term->abs.bodies[i]);
 		}
 		putchar(']');
 		break;
+	case TERM_NIL:
+		fputs("[]", stdout);
+		break;
 	case TERM_NUM:
 		printf("%g", term->num);
 		break;
+	case TERM_PAIR:
+		putchar('[');
+		term_print(term->pair.car);
+		fputs(" | ", stdout);
+		term_print(term->pair.cdr);
+		putchar(']');
+		break;
 	case TERM_PRIM:
-		printf("<%s>", prim_symbol(term->prim));
+		printf("<%s>", prim_name(term->prim));
 		break;
 	case TERM_TEST:
 		putchar('[');
 		term_print(term->test.pred);
 		for (size_t i = 0; i < term->test.ncsqs; ++i) {
-			fputs(i > 0 ? ", " : ". ", stdout);
+			fputs(i > 0 ? ", " : "? ", stdout);
 			term_print(term->test.csqs[i]);
 		}
 		for (size_t i = 0; i < term->test.nalts; ++i) {

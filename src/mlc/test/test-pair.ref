@@ -1,78 +1,67 @@
-Testing S, K, I combinators
-form: I (seven)
-norm: [f. [x. x; f; f; f; f; f; f; f]]
-read: 7
+Testing pair syntax
+form: [a | b]
+norm: [a | b]
 ======================================================================
-form: K (six) (three)
-norm: [f. [x. x; f; f; f; f; f; f]]
-read: 6
+form: [0 | 1]
+norm: [0 | 1]
 ======================================================================
-form: K
-norm: [x. [_. x]]
-read: True
+form: [0 | [1 | 2]]
+norm: [0 | [1 | 2]]
 ======================================================================
-form: K; S
-norm: [y. [z. z]]
-read: False
-read: 0
+form: [[x. x + 1] | [y. y - 1]]
+norm: [[x. x + 1] | [y. y - 1]]
 ======================================================================
-form: true (K; S) (K)
-norm: [y. [z. z]]
-read: False
-read: 0
+form: test-cons (3, 4)
+norm: [3 | 4]
 ======================================================================
-form: false (K; S) (K)
-norm: [x. [_. x]]
-read: True
+form: test-cons (apple, test-cons (banana, cherry))
+norm: [apple | [banana | cherry]]
 ======================================================================
-form: S (K) (I) (K (I) (S))
-norm: [x. x]
+Testing basic pair destructors
+form: #0 [pass | fail]
+norm: pass
 ======================================================================
-form: K (S) (I (S (K) (S) (I)))
-norm: [x. [y. [z. z; y; x (z)]]]
+form: #1 [fail | pass]
+norm: pass
 ======================================================================
-form: S (K) (I) (K)
-norm: [x. [_. x]]
-read: True
+form: #0 p0
+norm: fst
 ======================================================================
-Testing B, C, W combinators
-form: B
-norm: [x. [y. [z. z; y; x]]]
-read: -1
+form: #1 p0
+norm: snd
 ======================================================================
-form: S (S; K) (K)
-norm: [z. [y. [zA. zA; y; z]]]
-read: -1
+Testing unevaluated pair destructors
+form: #0 u
+norm: #0 u
 ======================================================================
-form: C
-norm: [x. [y. [z. y; x (z)]]]
+form: #0 8
+norm: #0 8
 ======================================================================
-form: S (S (K (S (S; K) (K))) (S)) (K; K)
-norm: [z. [zB. [zC. zB; z (zC)]]]
+form: #0 [x. x * x]
+norm: #0 [x. x * x]
 ======================================================================
-form: W
-norm: [x. [y. y; x (y)]]
+Testing nested pairs
+form: #0 #0 p1
+norm: a
 ======================================================================
-form: S (S) (K; S)
-norm: [z. [zD. zD; z (zD)]]
+form: #1 #0 p1
+norm: b
 ======================================================================
-form: I
-norm: [x. x]
+form: #0 #1 p1
+norm: c
 ======================================================================
-form: W (K)
-norm: [y. y]
+form: #1 #1 p1
+norm: d
 ======================================================================
-form: S
-norm: [x. [y. [z. z; y; x (z)]]]
+form: p1; carfn; carfn
+norm: a
 ======================================================================
-form: B (B (W; B) (C)) (B; B)
-norm: [z. [zE. [y. y; zE; z (y)]]]
+form: p1; carfn; cdrfn
+norm: b
 ======================================================================
-form: B (W; B) (B (B) (C))
-norm: [z. [zF. [y. y; zF; z (y)]]]
+form: p1; cdrfn; carfn
+norm: c
 ======================================================================
-Testing SCAM name capture case
-form: S (K (S)) (K)
-norm: [z. [y. [zG. zG; y; z]]]
-read: -1
+form: p1; cdrfn; cdrfn
+norm: d
 ======================================================================

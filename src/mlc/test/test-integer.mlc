@@ -1,3 +1,7 @@
+#include "church.mlc"
+#include "div.mlc"
+#include "integer.mlc"
+
 #echo "Testing N-Z conversion"
 five; n2z
 three; n2zinv

@@ -1,19 +1,49 @@
-|* List operations
-cons	:= [x, y? [f? y; f (x)]]
-car	:= [p? true; p]
-cdr	:= [p? false; p]
-nil	:= [_? true]
-nullp	:= [p? [_? [_? false]]; p]
+|* List operations, for when we want regular function names instead
+|* of primitives.
+cons	:= [x, y. [x | y]]
+car	:= [p. #0 p]
+cdr	:= [p. #1 p]
+nil	:= []
+|* XXX should be possible to eta-convert [q. q; #is-nil] -> #is-nil
+is-nil	:= [q. q; #is-nil]
+is-pair	:= [q. q; #is-pair]
 
-|* A list-based predecessor with better performance than other approaches
-phi	:= [x? cons (x; cdr, x; cdr; succ)]
-pred	:= [n? cons (zero, zero); n (phi); car]
-sub	:= [m, n? m; n (pred)]
-leq	:= [m, n? sub (m, n); zerop]
-lt	:= [m, n? sub (n, m); zerop; not]
+|* Basic list length (not using fold)
+basic-length-step := [self, list, accum.	\
+	[list; is-nil? accum | self (self, cdr (list), accum + 1)]]
+basic-length := [list. basic-length-step (basic-length-step, list, 0)]
 
-|* List length.  This uses the Church-encoding nullp above; it would be
-|* simplified by use of a nullp that returns 0 or 1.
-length-step := [self, list, accum? \
-	[(list; nullp) (1) (0).	accum | self (self, cdr (list), accum + 1)]]
-length := [list? length-step (length-step, list, 0)]
+|* List fold and unfold, on which we base numerous other operations
+fold-step := [self, state, step, list.		\
+	[list; is-nil? state |			\
+		self (self, step (state, car (list)), step, cdr (list))]]
+fold := [start, step, list. fold-step (fold-step, start, step, list)]
+
+|* The unfold step function returns [done | [state | elem]]
+|* where:	'done' is nonzero iff we're done unfolding;
+|*		'state' is the new state;
+|*		'elem' is the eleemnt to add to the list.
+unfold-step := [self, state, step, list.			\
+	step (state) [result.					\
+		[#0 result? list |				\
+			self (self, #0 #1 result, step,		\
+			      [#1 #1 result | list])]]]
+unfold := [start, step. unfold-step (unfold-step, start, step, nil)]
+
+|* List length, using fold.
+length-step := [accum, _. accum + 1]
+length := [list. fold (0, length-step, list)]
+
+|* List reverse, using fold.
+reverse-step := [accum, elem. cons (elem, accum)]
+reverse := [list. fold (nil, reverse-step, list)]
+
+|* Iota (list of numbers 1..n), using unfold.
+iota-step := [n. [n == 0 | [n - 1 | n]]]
+iota := [n. unfold (n, iota-step)]
+
+|* List map
+map-step := [self, f, list, accum.		\
+	[list; is-nil? reverse (accum) |	\
+		self (self, f, cdr (list), cons (f (car (list)), accum))]]
+map := [f, list. map-step (map-step, f, list, nil)]

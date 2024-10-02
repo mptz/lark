@@ -1,45 +1,25 @@
-#echo "Testing pairs"
-pair	:= cons (four, two)
-car (pair)
-cdr (pair)
+#include "list.mlc"
 
-#echo "Testing lists, nil, and nullp"
-nullp (nil)
-nullp (pair)
-list	:= cons (three, cons (two, cons (one, nil)))
-nullp (list)
-list; car
-list; cdr; car
+singleton := cons (1, nil)
+fruits := cons (apple, cons (banana, cons (cherry, cons (durian, nil))))
 
-#echo "Testing pred and sub"
-pred (zero)
-pred (one)
-pred (eight)
-sub (two, two)
-sub (seven, four)
+#echo "Testing basic list length"
+basic-length (nil)
+basic-length (singleton)
+basic-length (fruits)
 
-#echo "Testing leq"
-leq (zero, zero)
-leq (four, two)
-leq (two, four)
-leq (four, four)
+#echo "Testing list fold"
+fold-noop := [state, elem. state]
+fold (pass, fold-noop, nil)
+fold (pass, fold-noop, singleton)
+fold (pass, fold-noop, fruits)
 
-#echo "Testing lt"
-lt (zero, zero)
-lt (four, two)
-lt (two, four)
-lt (four, four)
+|* #echo "Testing iota"
 
-#echo "Testing lists with free variables"
-fruits	:= cons (apple, cons (banana, cons (cherry, cons (durian, nil))))
-fruits; car
-fruits; cdr; car
-fruits; cdr; cdr; car
-fruits; nullp
-fruits; cdr; cdr; cdr; nullp
-fruits; cdr; cdr; cdr; cdr; nullp
+|* #echo "Testing list fold"
 
-#echo "Testing list length"
-length (nil)
-length (list)
-length (fruits)
+#echo "Testing combined list functions"
+|* Test fold via sum, unfold via iota
+add := [m, n. m + n]
+sum := [list. fold (0, add, list)]
+100; iota; sum

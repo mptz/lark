@@ -92,11 +92,16 @@ void print_eval_stats(void)
  * O(1) operation.  Therefore a failure of #2 will likely lead to a
  * failure of #1.
  *
- * Additionally sanity-check depths.
+ * Additionally sanity-check list structure and depths.
  */
 static void sanity_check_l(const struct node *node, unsigned depth)
 {
-	for (/* nada */; node; node = node->prev) {
+	assert(node->variety == NODE_SENTINEL);
+	for (node = node->next; !done(node); node = node->next) {
+
+		/* doubly-linked structure invariants */
+		assert(node->next->prev == node);
+		assert(node->prev->next == node);
 
 		/* double-check depths and relative depths */
 		assert(node->depth >= 0);
@@ -108,7 +113,7 @@ static void sanity_check_l(const struct node *node, unsigned depth)
 
 		/* missed-redex check */
 		const struct slot *slot = &node->slots[0];
-		if (node_is_app(node) && slot->variety == SLOT_SUBST) {
+		if (node->variety == NODE_APP && slot->variety == SLOT_SUBST) {
 			const struct node *lhs = node_chase_lhs(slot->subst);
 			if (node_is_abs(lhs))
 				panicf("Missed beta-redex @%s\n", memloc(node));
@@ -118,6 +123,7 @@ static void sanity_check_l(const struct node *node, unsigned depth)
 
 		/* missed-test check */
 		if (node->variety == NODE_TEST &&
+		    node->slots[0].variety == SLOT_SUBST &&
 		    node->slots[0].subst->nslots == 1 &&
 		    node->slots[0].subst->slots[0].variety == SLOT_NUM)
 			panicf("Missed test @%s\n", memloc(node));
@@ -132,19 +138,23 @@ static void sanity_check_l(const struct node *node, unsigned depth)
 /*
  * For right-to-left sanity checks (which we apply before reducing
  * and on reaching normal form), we check a reduction invariant:
- * we should not have nodes with reference count == 0 with the
- * exception of '*' (the last ES reached).  We additionally perform
- * depth sanity checks.
+ * we should no longer have nodes with reference count == 0.  We
+ * additionally perform depth sanity checks.
  *
  * After reducing, we could additionally check that the term is in
  * normal form (no beta-redexes either at the top level or within
  * abstractions), but that's not yet implemented.  It's less urgent
  * as sanity_check_l verifies no beta-redexes at the current level,
- * and we run that on reaching '*' including within abstractions.
+ * and we run that on reversing, including within abstractions.
  */
 static void sanity_check_r(const struct node *node, unsigned depth)
 {
-	for (/* nada */; node; node = node->prev) {
+	assert(node->variety == NODE_SENTINEL);
+	for (node = node->prev; !done(node); node = node->prev) {
+
+		/* doubly-linked structure invariants */
+		assert(node->next->prev == node);
+		assert(node->prev->next == node);
 
 		/* double-check depths and relative depths */
 		assert(node->depth >= 0);
@@ -155,20 +165,25 @@ static void sanity_check_r(const struct node *node, unsigned depth)
 			       memloc(node), memloc(node_abs_body(node)));
 
 		/* uncollected garbage? */
-		if (node->nref == 0 && node->prev != NULL)
+		if (node->nref == 0)
 			panicf("Found uncollected garbage @%s\n", memloc(node));
 	}
 }
 
 enum eval_dir { RL, LR };
 
-static void trace_eval(enum eval_dir dir, unsigned depth,
-		       struct node *headl, struct node *headr)
+static void trace_eval(enum eval_dir dir, unsigned depth, struct node *head)
 {
 	printf("eval_%s[+%u]: ", dir == RL ? "rl" : "lr", depth);
-	node_print_rl(headl);
-	fputs(dir == RL ? " <== " : " ==> ", stdout);
-	node_print_lr(headr, headl == NULL);
+	if (dir == RL) {
+		node_print_until(head);
+		fputs(" <=< ", stdout);
+		node_print_after(head->next);
+	} else {
+		node_print_until(head->prev);
+		fputs(" >=> ", stdout);
+		node_print_after(head);
+	}
 	putchar('\n');
 	fflush(stdout);
 }
@@ -183,19 +198,25 @@ static void trace_eval(enum eval_dir dir, unsigned depth,
  * Descent into an abstraction is a recursive traversal, i.e. we echo
  * right-to-left then left-to-right traversals on the abstraction body.
  */
-struct node *reduce(struct node *headl)
+struct node *reduce(struct node *head)
 {
-	struct node *headr = NULL, *outer = NULL,	/* reduction state */
-		    *x, *y;				/* temporaries */
+	struct node *outer = NULL,	/* containing abstraction links */
+		    *x, *y;		/* temporaries */
 	unsigned depth = 0;
 
 	the_eval_stats.reduce_start++;
-	if (SANITY_CHECK) sanity_check_r(headl, depth);
+	/* fall through to eval_body... */
+
+eval_body:
+	if (head->variety != NODE_SENTINEL)
+		panic("Can't reduce a non-sentinel node\n");
+	if (SANITY_CHECK) sanity_check_r(head, depth);
+	head = head->prev;
 	/* fall through to eval_rl... */
 
 eval_rl:
 	if (EVAL_STATS) the_eval_stats.eval_rl++;
-	if (TRACE_EVAL) trace_eval(RL, depth, headl, headr);
+	if (TRACE_EVAL) trace_eval(RL, depth, head);
 	/*
 	 *                 headl    headr
 	 *  <==R-to-L===     |        |
@@ -205,25 +226,17 @@ eval_rl:
 	 *       +-----+  #=====#  +-----+  +-----+
 	 *               *current*
 	 */
-	if (!headl)				/* done with R-to-L? */
-		goto rule_reverse;		
+	if (done(head))
+		goto rule_reverse;
 
 	/*
 	 * Verify some invariants: before we evaluate nodes in R-to-L,
-	 * they are not shared and have backrefs (parent references)
-	 * if applicable; our local depth is also correctly calibrated.
+	 * they are not shared and have backrefs (parent references);
+	 * our local depth is also correctly calibrated.
 	 */
-	assert(headl->nref == 1 || !headl->prev);
-	assert(!headl->prev || headl->backref);
-	assert(headl->depth == depth);
-
-	/*
-	 * For many scenarios we simply move to the left without acting.
-	 * This section is a sequence of tests to determine if we can
-	 * take any reduction action at all.
-	 */
-	if (headl->variety == NODE_TEST)
-		goto rule_test;
+	assert(head->nref == 1);
+	assert(head->backref);
+	assert(head->depth == depth);
 
 	/*
 	 * For us to have anything to do, the 0th slot in the head node
@@ -231,70 +244,68 @@ eval_rl:
 	 * a substitution might be a name alias.  When the head term has
 	 * multiple slots (i.e. an application), it can only be a beta-redex
 	 * if the 0th slot is a substitution (a known term) rather than a
-	 * free or bound variable (an unknown term).
+	 * free or bound variable (an unknown term).  Or the term could be
+	 * a test... but without a substitution in the 0th slot we know
+	 * it's irreducible without variety-directed dispatch.
 	 */
-	assert(headl->nslots);
-	if (headl->slots[0].variety != SLOT_SUBST)
+	if (!head->nslots || head->slots[0].variety != SLOT_SUBST)
 		goto rule_move_left;		
 
-	if (headl->nslots <= 1) {	/* not an app? */
+	/*
+	 * For many scenarios we simply move to the left without acting.
+	 * This section is a sequence of tests to determine if we can
+	 * take any reduction action at all.
+	 */
+	switch (head->variety) {
+	case NODE_APP:
+		/*
+		 * We're still not sure 'head' is a redex.  Check for a
+		 * primitive or abstraction in function position.
+		 */
+		if (node_is_prim(head->slots[0].subst))
+			goto rule_prim;
+		if (node_is_abs(head->slots[0].subst))
+			goto rule_beta;
+		break;
+	case NODE_CELL:
+		break;
+	case NODE_TEST:
+		goto rule_test;
+	case NODE_VAR:
 		/*
 		 * A SUBST node encountered during R-to-L traversal is a
-		 * name alias unless it's the leftmost (star) node.  In
-		 * such a situation we forward references to this SUBST
-		 * to its referent, avoiding renaming chains that might
-		 * cause us to miss redexes.
+		 * name alias unless it's the leftmost node.  In such a
+		 * situation we forward references to this SUBST to its
+		 * its referent, avoiding renaming chains that might lead
+		 * us to miss redexes.
+		 *
+		 * XXX revisit this logic... what would have to change
+		 * to be able to rename even the leftmost?  Do we ever
+		 * want to do so?
 		 */
-		if (headl->prev)
+		if (head->prev->variety != NODE_SENTINEL)
 			goto rule_rename;
-		goto rule_move_left;
+		break;
+	default:
+		panicf("Unhandled node variety %d\n", head->variety);
 	}
-
-	/*
-	 * At this point we know 'headl' is an application, but we're not
-	 * sure it's a redex.  The crumbling transformation flattens
-	 * expressions, so we can't have an abstraction or application
-	 * nested inside this application.  We have only variables to
-	 * deal with, whether they be original variables of the lambda
-	 * term or node variables (explicit substitutions) introduced by
-	 * crumbling or evaluation.
-	 */
-
-	/*
-	 * In order to have a primitive-redex we must have a substitution
-	 * referencing a primitive in function position.  We know we have
-	 * a substitution in function position, so check for the primitive.
-	 */
-	if (node_is_prim(headl->slots[0].subst))
-		goto rule_prim;
-
-	/*
-	 * Similarly, in order to have a beta-redex we must have a
-	 * substitution referencing an abstraction in function position.
-	 */
-	if (node_is_abs(headl->slots[0].subst))
-		goto rule_beta;
-
 	/* fall through to rule_move_left... */
 
 rule_move_left:
 	/*
 	 * If the current node is not a redex and we can't do an
 	 * administrative renaming, the default rule simply moves
-	 * the pointer to the left.
+	 * the reduction head to the left.
 	 */
 	if (EVAL_STATS) the_eval_stats.rule_move_left++;
-	x = headl->prev;
-	headl->prev = headr;
-	headr = headl;
-	headl = x;
+	head = head->prev;
 	goto eval_rl;
 
 rule_beta:
 	if (EVAL_STATS) the_eval_stats.rule_beta++;
-	assert(headl->slots[0].variety == SLOT_SUBST);
-	x = headl->slots[0].subst;
-	assert(headl->depth >= x->depth);
+	assert(head->slots[0].variety == SLOT_SUBST);
+	x = head->slots[0].subst;
+	assert(head->depth >= x->depth);
 	assert(node_is_abs(x));
 	assert(x->nref > 0);
 	x->nref--;	/* since redex-root application is going away */
@@ -319,32 +330,48 @@ rule_beta:
 	 * lambda calculus, this won't arise so we don't have to build
 	 * machinery to deal with it.
 	 */ 
-	if (headl->nslots != x->nslots)
+	if (head->nslots != x->nslots)
 		panic("Arity mismatch in beta-reduction!\n");
 
 	/*
 	 * First traverse and preprocess the application's arguments:
+	 *
+	 * -- Create new nodes as needed.  Beta-reduction replaces bound
+	 *    variable slots (SLOT_BOUND) with explicit substitution
+	 *    slots (SLOT_SUBST), which are pointers to reduction-graph
+	 *    nodes.  Since application nodes can contain both bound and
+	 *    free variables, we must wrap those in substitution nodes
+	 *    prior to beta-reduction.
+	 *    
+	 *    NOTE: in contrast to the SCAM abstract machine (both the
+	 *    abstract specification and the reference implementation),
+	 *    we don't allocate a new node when an argument slot already
+	 *    contains an explicit substitution (SLOT_SUBST)--we just
+	 *    reuse the existing substitution.  As described above, new
+	 *    explicit substitutions are allocated only for bound & free
+	 *    variables, which we never directly substitute in
+	 *    beta-reduction.
+	 *
+	 *    This change may need to be reverted if I discover it causes
+	 *    issues.  One way to build confidence is to add additional
+	 *    invariants.  The evaluation order of the SCAM abstract
+	 *    machine allows many helpful invariants; the key appears
+	 *    to be that we substitute first, evaluate second, and never
+	 *    re-substitute in already-evaluated terms.
+	 *
 	 * -- Look for self-application, which prevents destructive
 	 *    beta-evaluation even when x (the function) lacks refs.
-	 * -- Create new nodes as needed (for inert terms).
+	 *
 	 * We start traversing at 1 since the function is in slot 0.
 	 *
 	 * We use the temporary 'y' from here to beta-reduction to
 	 * track self-reference.
 	 */
 	y = NULL;
-	for (size_t i = 1; i < headl->nslots; ++i) {
-		struct slot slot = headl->slots[i];
+	for (size_t i = 1; i < head->nslots; ++i) {
+		struct slot slot = head->slots[i];
 		assert(slot_is_ref(slot));
-
-		/*
-		 * If the argument is a value (atom or abstraction), we
-		 * substitute its existing node in beta-reduction.  We
-		 * should consider merging this with the don't-alloc case
-		 * below, if it holds up under scrutiny, since the handling
-		 * is the same.
-		 */
-		if (slot.variety == SLOT_SUBST && slot.subst->isvalue) {
+		if (slot.variety == SLOT_SUBST) {
 			/*
 			 * In the case of self-application this might be
 			 * decrementing the same node's reference a second
@@ -354,44 +381,10 @@ rule_beta:
 			slot.subst->nref--;
 			assert(slot.subst->nref >= 0);
 			/*
-			 * Since abstractions are values, self-application
-			 * can only happen here, not in the inert case below.
+			 * Self-application check.
 			 */
 			if (slot.subst == x)
 				y = x;
-			continue;
-		}
-
-		/*
-		 * If the argument is not a value, we may need to create
-		 * a new node for it.  NOTE: in contrast to the SCAM
-		 * abstract machine (both the abstract specification and
-		 * the reference implementation), we don't allocate a new
-		 * node when an argument slot already contains an explicit
-		 * substitution (SLOT_SUBST)--we just reuse the existing
-		 * substitution.  New explicit substitutions are only
-		 * allocated for bound & free variables, which we never
-		 * directly substitute in beta-reduction.
-		 *
-		 * This change may need to be reverted if I discover it
-		 * causes issues.  One way to build confidence is to add
-		 * additional invariants.  The evaluation order of the
-		 * SCAM abstract machine allows many helpful invariants,
-		 * and we know these non-value terms (being inert) can't
-		 * create a beta-redex via substitution.  But even that
-		 * difference may not be significant since we handle them
-		 * just as we handle abstractions above--the key appears
-		 * to be that we substitute first, evaluate second, and
-		 * never re-substitute in already-evaluated terms.
-		 *
-		 * Adding an XXX as a reminder to merge this case with
-		 * the above eventually.
-		 */
-		if (slot.variety == SLOT_SUBST) {
-			assert(!slot.subst->isvalue);
-			slot.subst->nref--;
-			assert(slot.subst->nref >= 0);
-			assert(slot.subst != x);    /* self-ref impossible */
 			continue;
 		}
 
@@ -421,8 +414,8 @@ rule_beta:
 			NodeBoundVar(NULL, depth, slot.bv.up, slot.bv.across) :
 			NodeFreeVar(NULL, depth, slot.term);
 		node->isfresh = true;
-		headl->slots[i].subst = node;
-		headl->slots[i].variety = SLOT_SUBST;
+		head->slots[i].subst = node;
+		head->slots[i].variety = SLOT_SUBST;
 	}
 				
 	/*
@@ -444,37 +437,56 @@ rule_beta:
 	 * the body of x (creating new references).  So we can't
 	 * destroy x's body yet.
 	 */
+	assert(head->depth == depth);
+	assert(head->depth >= x->depth);
 	if (x->nref == 0 && !y /* no self-reference */) {
 		if (EVAL_STATS) the_eval_stats.quick_beta_move++;
-		y = headl;	/* save a redex reference before reducing */
-		headl = beta_nocopy(headl, node_take_body(x), depth,
-				    headl->depth - x->depth);
+		y = head;	/* save a redex reference before reducing */
+		head = beta_nocopy(head, node_take_body(x), depth,
+				   head->depth - x->depth);
 	} else {
-		y = headl;	/* save a redex reference before reducing */
-		headl = beta_reduce(headl, node_abs_body(x), depth,
-				    headl->depth - x->depth);
+		y = head;	/* save a redex reference before reducing */
+		head = beta_reduce(head, node_abs_body(x), depth,
+				   head->depth - x->depth);
 	}
 
 	/*
-	 * Now 'y', not 'headl', points to the redex.
+	 * Now 'y', not 'head', points to the redex.
 	 */
 
 	/*
-	 * Link arguments to 'headr' (previously-evaluated environment).
- 	 * If an argument is unreferenced after beta-reduction, however,
-	 * we can immediately free it (in whole or in part, depending on
-	 * circumstances) rather than wait for L-to-R garbage collection.
+	 * Link arguments to the right of 'head' (the previously-evaluated
+	 * environment).  If an argument is unreferenced after
+	 * beta-reduction, however, we can immediately free it (in whole
+	 * or in part, depending on circumstances) rather than wait for
+	 * L-to-R garbage collection.
 	 */
 	for (size_t i = 1; i < y->nslots; ++i) {
 		assert(y->slots[i].variety == SLOT_SUBST);
 		struct node *arg = y->slots[i].subst;
-		if (arg->isvalue) {
+		if (arg->isfresh) {
 			/*
-			 * Values are already present in the environment;
-			 * we didn't allocate new nodes for them and don't
-			 * need to link them.
+			 * arg is a node which we allocated above; we know
+			 * it's not linked by head at this level or at a
+			 * lower abstraction depth, so we can safely free
+			 * it completely if it's unreferenced.
 			 */
-			if (arg->nref || !node_is_abs(arg))
+			arg->isfresh = false;
+			if (arg->nref) {
+				node_insert_after(arg, head);
+			} else {
+				if (EVAL_STATS)
+					the_eval_stats.quick_inert_unref++;
+				node_free(arg);
+			}
+		} else if (!arg->nref) {
+			/*
+			 * arg is a node which previously existed; we can't
+			 * necessarily free the node itself, but we may be
+			 * able to free sub-components of it.  Currently
+			 * only implemented for abstractions.
+			 */
+			if (!node_is_abs(arg))
 				continue;
 			/*
 		 	 * If an abstraction is unreferenced after beta-
@@ -498,19 +510,7 @@ rule_beta:
 			 * XXX this case is unimplemented!
 			 */
 			if (EVAL_STATS) the_eval_stats.quick_value_unref++;
-			node_free_body(arg);
-		} else if (arg->isfresh) {
-			arg->isfresh = false;
-			if (arg->nref) {
-				arg->prev = headr;
-				headr = arg;
-				continue;
-			}
-			/*
-			 * As above, an unreferenced node can be freed.
-			 */
-			if (EVAL_STATS) the_eval_stats.quick_inert_unref++;
-			node_free(arg);
+			node_wipe_body(arg);
 		}
 	}
 
@@ -526,34 +526,24 @@ rule_prim:
 	if (EVAL_STATS) the_eval_stats.rule_prim++;
 
 	/*
-	 * In contrast to beta-reduction, primitive reduction never
-	 * yields a redex, so we don't have to leave it in 'headl' for
-	 * re-evaluation.  Either the current head is irreducible, in
-	 * which case there's no point in taking another crack at it,
-	 * or it reduces to e.g. a number or other atom (not a redex).
-	 */
-	y = headl;
-	headl = prim_reduce(headl, depth);
-
-	/*
 	 * Depending on the primitive, the 'redex' may not have really
 	 * been a redex after all... for example, attempting to sum a
-	 * bunch of bound variables cannot be simplified.  When
-	 * prim_reduce returns the original redex, we replicate the
-	 * logic of rule_move_left (carry on without reducing).  When
-	 * prim_reduce returns a *new* redex, the only difference is
-	 * we must free the old one.
+	 * pair of bound variables cannot be simplified.  Testing for
+	 * a redex is primitive-specific; when the test fails we move
+	 * left without reducing.
 	 */
-	x = y->prev;
-	if (headl != y) {
-		if (EVAL_STATS) the_eval_stats.rule_prim_redex++;
-		assert(y->nref == 0);
-		node_free(y);
-	} else
+	if (!prim_reducible(head)) {
 		if (EVAL_STATS) the_eval_stats.rule_prim_irred++;
-	headl->prev = headr;
-	headr = headl;
-	headl = x;
+		goto rule_move_left;
+	}
+
+	/*
+	 * Primitive reduction handles connecting the result to the
+	 * evaluation chain as well as freeing the original redex if
+	 * necessary.
+	 */
+	if (EVAL_STATS) the_eval_stats.rule_prim_redex++;
+	head = prim_reduce(head);
 	goto eval_rl;
 
 rule_rename:
@@ -562,7 +552,7 @@ rule_rename:
 	 * within nodes, as depicted in this diagram.
 	 *
 	 * Before:
-	 *                (headl)
+	 *                (head)
 	 *                   |
 	 *        +---------+|   +---------+
          *        |         ||   |         |
@@ -574,7 +564,7 @@ rule_rename:
 	 *                     |                  |
 	 *                     +------------------+
 	 *
-	 *           (headl)
+	 *           (head)
 	 * After:       |
 	 *        +------------------------+
          *        |     |                  |
@@ -585,93 +575,85 @@ rule_rename:
 	 *      +---------------------------------+
 	 */
 	if (EVAL_STATS) the_eval_stats.rule_rename++;
-	assert(headl->slots[0].variety == SLOT_SUBST);
-	assert(headl->prev);
-	assert(headl->backref);
-	assert(headl->backref->subst == headl);
-	x = headl->slots[0].subst;
-	x->backref = headl->backref;
-	x->backref->subst = x;
-	y = headl;
+	assert(head->nslots == 1);
+	assert(head->slots[0].variety == SLOT_SUBST);
+	assert(head->backref);
+	assert(head->backref->subst == head);
+	x = head->slots[0].subst;	/* x is the target */
+	x->backref = head->backref;	/* snap backwards ref */
+	x->backref->subst = x;		/* snap forwards ref */
+	y = head;			/* store head in temp */
+	head = head->prev;		/* move left */
+	node_remove(y);			/* dispose of rename... */
 	y->nref--;
-	headl = headl->prev;
-	assert(y->nref == 0);
+	assert(!y->nref);
 	node_free(y);
 	goto eval_rl;
 
 rule_test:
 	if (EVAL_STATS) the_eval_stats.rule_test++;
-	assert(headl->variety == NODE_TEST);
-	assert(headl->nslots == 5);
-	assert(headl->slots[0].variety == SLOT_SUBST &&
-	       headl->slots[1].variety == SLOT_SUBST &&
-	       headl->slots[2].variety == SLOT_SUBST &&
-	       headl->slots[3].variety == SLOT_SUBST &&
-	       headl->slots[4].variety == SLOT_SUBST);
+	assert(head->variety == NODE_TEST);
+	assert(head->nslots == 3);
+	assert(head->slots[SLOT_TEST_PRED].variety == SLOT_SUBST &&
+	       head->slots[SLOT_TEST_CSQ].variety == SLOT_BODY &&
+	       head->slots[SLOT_TEST_ALT].variety == SLOT_BODY);
 
 	/*
 	 * To reduce a test, the predicate must be a number.  If the
 	 * number is nonzero, replace the test with the consequent;
 	 * otherwise replace the test with the alternative.
 	 */
-	x = headl->slots[0].subst;	/* x is predicate */
+	x = head->slots[SLOT_TEST_PRED].subst;
 	if (x->nslots != 1 || x->slots[0].variety != SLOT_NUM)
 		goto rule_move_left;
+
 	x->nref--;			/* predicate is consumed */
-	assert(x->nref == 0);		/* no other references possible yet */
 	if (x->slots[0].num) {
 		/* consequent branch */
-		x = headl->slots[1].subst;	/* consequent left end */
-		y = headl->slots[2].subst;	/* consequent right end */
-		node_free_env(headl->slots[4].subst);	/* free alternative */
+		x = head->slots[SLOT_TEST_CSQ].subst->next;
+		y = head->slots[SLOT_TEST_CSQ].subst->prev;
+		node_pinch(head->slots[SLOT_TEST_CSQ].subst);
 	} else {
 		/* alternative branch */
-		x = headl->slots[3].subst;	/* alternative left end */
-		y = headl->slots[4].subst;	/* alternative right end */
-		node_free_env(headl->slots[2].subst);	/* free consequent */
+		x = head->slots[SLOT_TEST_ALT].subst->next;
+		y = head->slots[SLOT_TEST_ALT].subst->prev;
+		node_pinch(head->slots[SLOT_TEST_ALT].subst);
 	}
-	/*
-	 * We can't free the predicate here since it's linked from headr.
-	 * It may be *guaranteed* to be headr in which case it should be
-	 * possible to free.  But for now we leave it to be collected later.
-	 */
-	/* node_free(headl->slots[0].subst); */	/* free predicate */
 
 	/*
-	 * Connect the left end of the chosen branch to the rest of the
-	 * environment (headl->prev) as well as update the parent pointer
-	 * to headl (if it exists) to point to the branch left end.
+	 * Connect the chosen subexpression (between 'x' and 'y') to the
+	 * evaluation environment in place of 'head', the redex.
 	 */
-	assert(x->nref == 0);
-	x->prev = headl->prev;
-	x->backref = headl->backref;
-	if (x->backref) {
-		x->backref->subst = x;
-		x->nref++;
-	}
+	assert(head->backref);
+	x->backref = head->backref;
+	x->backref->subst = x;
+	assert(head->nref == 1);
+	assert(x->nref == 1);
+	head->nref--;
+	x->prev = head->prev;
+	x->prev->next = x;
+	y->next = head->next;
+	y->next->prev = y;
 
 	/*
 	 * Now we can update 'headl' to 'y', the right end of the chosen
-	 * branch, and free the test node itself; predicate and non-chosen
-	 * branch have already been freed above.
+	 * branch, and free the test node itself.
 	 */
-	x = headl;
-	if (x->prev) {
-		x->nref--;
-		assert(x->nref == 0);
-	}
-	headl = y;
-	node_free_shallow(x);			/* free test node */
+	x = head;
+	head = y;
+	node_free(x);
 	goto eval_rl;
 
 rule_reverse:
 	if (EVAL_STATS) the_eval_stats.rule_reverse++;
-	if (SANITY_CHECK) sanity_check_l(headr, depth);
+	if (SANITY_CHECK) sanity_check_l(head, depth);
+	assert(head->variety == NODE_SENTINEL);
+	head = head->next;
 	/* fall through to eval_lr... */
 
 eval_lr:
 	if (EVAL_STATS) the_eval_stats.eval_lr++;
-	if (TRACE_EVAL) trace_eval(LR, depth, headl, headr);
+	if (TRACE_EVAL) trace_eval(LR, depth, head);
 	/*
 	 *                 headl    headr
 	 *  ===L-to-R==>     |        |
@@ -681,26 +663,22 @@ eval_lr:
 	 *       +-----+  +-----+  #=====#  +-----+
 	 *                        *current*
 	 */
-	if (!headr) {
-		if (!outer)
-			goto done;
+	if (done(head)) {
+		if (!outer) goto done;
 		goto rule_exit_abs;
 	}
-	if (headl && headr->nref == 0)
+	if (!head->nref)
 		goto rule_collect;
-	if (node_is_abs(headr))
+	if (node_is_abs(head))
 		goto rule_enter_abs;
-	goto rule_move_right;
+	/* fall through to rule_move_right... */
 
-rule_move_right:
+/* rule_move_right: */
 	/*
 	 * Move right without taking any other action.
 	 */
 	if (EVAL_STATS) the_eval_stats.rule_move_right++;
-	x = headr->prev;
-	headr->prev = headl;
-	headl = headr;
-	headr = x;
+	head = head->next;
 	goto eval_lr;
 
 rule_enter_abs:
@@ -710,21 +688,16 @@ rule_enter_abs:
 	 * This avoids useless reduction work.
 	 */
 	if (EVAL_STATS) the_eval_stats.rule_enter_abs++;
-	assert(!headl || headr->nref);
-	assert(node_is_abs(headr));
-	assert(headr->nslots >= 2);
-	assert(headr->slots[1].variety == SLOT_PARAM ||
-	       headr->slots[1].variety == SLOT_SELF);
+	assert(node_is_abs(head));
+	assert(head->nref);
+	assert(head->nslots >= 2);
+	assert(head->slots[1].variety == SLOT_PARAM ||
+	       head->slots[1].variety == SLOT_SELF);
 
-	x = node_abs_body(headr);
-	headr->slots[SLOT_ABS_BODY].subst = headl;
-	headr->outer = outer;
-	outer = headr;
-	headl = x;
-	headr = NULL;
+	head->outer = outer, outer = head;	/* push outer */
+	head = node_abs_body(head);		/* load body sentinel */
 	++depth;
-	if (SANITY_CHECK) sanity_check_r(headl, depth);
-	goto eval_rl;
+	goto eval_body;
 
 rule_exit_abs:
 	/*
@@ -738,35 +711,30 @@ rule_exit_abs:
 	 * combines the pop and an equivalent of rule_move_right.
 	 */
 	if (EVAL_STATS) the_eval_stats.rule_exit_abs++;
-	assert(headl != NULL);
-	assert(headr == NULL);
+	assert(done(head));
 	assert(outer != NULL);
 	assert(node_is_abs(outer));
-	x = outer->slots[SLOT_ABS_BODY].subst;	/* old headl */
-	outer->slots[SLOT_ABS_BODY].subst = headl;
-	headl = outer;
-	headr = outer->prev;
-	headl->prev = x;
-	outer = outer->outer;
+	head = outer, outer = head->outer;	/* pop outer */
+	head = head->next;			/* move right */
 	assert(depth > 0);
 	--depth;
 	goto eval_lr;
 
 rule_collect:
 	if (EVAL_STATS) the_eval_stats.rule_collect++;
-	assert(headr->nref == 0);
-	assert(headl != NULL);
-	x = headr->prev;
-	node_free(headr);
-	headr = x;
+	assert(!head->nref);
+	x = head->next;
+	node_remove(head);
+	node_deref(head);
+	node_free(head);
+	head = x;
 	goto eval_lr;
 
 done:
-	assert(headl);
-	assert(!headr);
+	assert(done(head));
 	assert(!outer);
 	assert(depth == 0);
-	if (SANITY_CHECK) sanity_check_r(headl, depth);
+	if (SANITY_CHECK) sanity_check_r(head, depth);
 	the_eval_stats.reduce_done++;
-	return headl;
+	return head;
 }

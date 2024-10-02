@@ -1,5 +1,8 @@
+#include "church.mlc"
+#include "div.mlc"
+
 div (six, three)
 mod (seven, four)
 divmod (five, two)
-divmod (ten, three); car
-divmod (nine, four); cdr
+#0 divmod (ten, three)
+#1 divmod (nine, four)

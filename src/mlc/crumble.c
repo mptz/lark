@@ -37,25 +37,39 @@
  */
 #define STAR NULL
 
-static struct node_and_prev {
-	struct node *node, *prev;
-} crumble_term(struct term *term, struct node *prev, unsigned depth);
+static struct node_chain
+crumble_term(struct term *term, struct node *prev, unsigned depth);
+
+/*
+ * When crumbling, we assemble a node chain, linking each node to its
+ * predecessor.  After the chain is complete, we fix up successors.
+ */
+struct node *crumble_chain(struct term *term, unsigned depth)
+{
+	struct node_chain chain = crumble_term(term, STAR, depth);
+	assert(chain.next->depth == depth);
+	assert(chain.prev->depth == depth);
+	for (struct node *curr = chain.prev, *next = STAR;
+	     curr != STAR; next = curr, curr = curr->prev)
+		curr->next = next;
+	return NodeSentinel(chain.next, chain.prev, depth);
+}
 
 /*
  * crumble_flatten is called multiple times when we're crumbling an
- * application node, once to process the function and once for each
- * argument.  The intent is evident from the name: we replace nesting
- * with references (which you could admittedly view as another kind
+ * term with nested subterms (e.g. an application, pair, or test).
+ * The intent is suggested by the name: we replace *children* with
+ * *references* (which you could admittedly view as another kind
  * of nesting, but which are also linearized into the environment
  * alongside the parent term so we can visit every term at a given
  * abstraction depth with left/right traversals).  Once that is done
  * we only need to "go deeper" to enter into abstractions.
  *
  * We eliminate nesting by returning a variable (bound, free, or
- * subst); if there's a nested term within the application, attach
- * that to the linear environment we're constructing (link it to
- * 'prev').  We return the slot variable to write into the
- * application along with the current head of the environment.
+ * subst); in the substitution case we crumble the nested subterm and
+ * attach it to the linear environment we're constructing (link it to
+ * 'prev').  We return the slot to write into the parent node along
+ * with the current head of the environment, 'prev'.
  */
 static struct slot_and_prev {
 	struct slot slot;
@@ -83,35 +97,35 @@ static struct slot_and_prev {
 			.slot.term = term,
 			.prev = prev,
 		};
-	default:
+	default: {
 		/*
 		 * Since crumbled applications only contain indirections
 		 * via variables and substitutions, any non-variable will
 		 * be a separately-crumbled substitution.
 		 */
-		struct node_and_prev nap = crumble_term(term, prev, depth);
+		struct node_chain chain = crumble_term(term, prev, depth);
 		return (struct slot_and_prev) {
 			.slot.variety = SLOT_SUBST,
-			.slot.subst = nap.node,
-			.prev = nap.prev,
+			.slot.subst = chain.next,
+			.prev = chain.prev,
 		};
+	}
 	}
 }
 
-static struct node_and_prev
+static struct node_chain
 crumble_term(struct term *term, struct node *prev, unsigned depth)
 {
-	struct node_and_prev retval;
+	struct node_chain retval;
 
 	switch (term->variety) {
 	case TERM_ABS:
 	case TERM_FIX:
 		assert(term->abs.nformals > 0);
 		assert(term->abs.nbodies == 1);
-		retval.node = retval.prev =
+		retval.next = retval.prev =
 			NodeAbs(prev, depth,
-				crumble_term(term->abs.bodies[0],
-					     STAR, depth + 1).prev,
+				crumble_chain(term->abs.bodies[0], depth + 1),
 				term->abs.nformals, term->abs.formals);
 		/*
 		 * We distinguish fixpoint abstractions from regular
@@ -119,7 +133,7 @@ crumble_term(struct term *term, struct node *prev, unsigned depth)
 		 * having variety SLOT_SELF rather than SLOT_PARAM.
 		 */
 		if (term->variety == TERM_FIX)
-			retval.node->slots[1].variety = SLOT_SELF;
+			retval.next->slots[1].variety = SLOT_SELF;
 		break;
 	case TERM_APP: {
 		/*
@@ -147,7 +161,7 @@ crumble_term(struct term *term, struct node *prev, unsigned depth)
 		 * We also set 'nref' in the referenced node to 1 to
 		 * reflect the single application node referencing it.
 		 */
-		retval.node = prev = NodeApp(prev, depth, term->app.nargs);
+		retval.next = prev = NodeApp(prev, depth, term->app.nargs);
 		struct slot_and_prev sap = { .prev = prev };
 		for (size_t i = 0; i <= term->app.nargs; ++i) {
 			sap = crumble_flatten(
@@ -171,17 +185,52 @@ crumble_term(struct term *term, struct node *prev, unsigned depth)
 		 * less than the number of abstractions traversed so far.
 		 */
 		assert(term->bv.up < depth);
-		retval.node = retval.prev =
+		retval.next = retval.prev =
 			NodeBoundVar(prev, depth, term->bv.up, term->bv.across);
 		break;
 	case TERM_FREE_VAR:
-		retval.node = retval.prev = NodeFreeVar(prev, depth, term);
+		retval.next = retval.prev = NodeFreeVar(prev, depth, term);
+		break;
+	case TERM_NIL:
+		retval.next = retval.prev = NodeCell(prev, depth, 0);
 		break;
 	case TERM_NUM:
-		retval.node = retval.prev = NodeNum(prev, depth, term->num);
+		retval.next = retval.prev = NodeNum(prev, depth, term->num);
 		break;
+	case TERM_PAIR: {
+		/*
+		 * This is similar to the TERM_APP scenario--it may be
+		 * possible to coalesce some of this, especially if we
+		 * allow n-ary cells in forms & terms.
+		 */
+		retval.next = prev = NodeCell(prev, depth, 2);
+		struct slot_and_prev sap;
+
+		sap = crumble_flatten(term->pair.car, prev, depth);
+		assert(slot_is_ref(sap.slot));
+		if (sap.slot.variety == SLOT_SUBST) {
+			assert(sap.slot.subst != prev);
+			assert(sap.slot.subst->nref == 0);
+			sap.slot.subst->nref = 1;
+			sap.slot.subst->backref = &retval.next->slots[0];
+		}
+		retval.next->slots[0] = sap.slot;
+
+		sap = crumble_flatten(term->pair.cdr, sap.prev, depth);
+		assert(slot_is_ref(sap.slot));
+		if (sap.slot.variety == SLOT_SUBST) {
+			assert(sap.slot.subst != prev);
+			assert(sap.slot.subst->nref == 0);
+			sap.slot.subst->nref = 1;
+			sap.slot.subst->backref = &retval.next->slots[1];
+		}
+		retval.next->slots[1] = sap.slot;
+
+		retval.prev = sap.prev;
+		break;
+	}
 	case TERM_PRIM:
-		retval.node = retval.prev = NodePrim(prev, depth, term->prim);
+		retval.next = retval.prev = NodePrim(prev, depth, term->prim);
 		break;
 	case TERM_TEST: {
 		/*
@@ -190,39 +239,39 @@ crumble_term(struct term *term, struct node *prev, unsigned depth)
 		 * the test node itself (i.e. to its right in the same
 		 * singly-linked environment, so evaluted first in right-
 		 * to-left traversal).  It's thus handled identically to
-		 * the function and values within an application, with
-		 * the exception that we always use a substitution even
-		 * for free and bound variables (hence crumble_term rather
-		 * than crumble_flatten).
+		 * the function and values within an application; there
+		 * may be room to consolidate these cases further.
 		 */
-		retval.node = prev = NodeTest(prev, depth);
-		assert(retval.node->nslots == 5);
-		struct node_and_prev nap;
+		retval.next = prev = NodeTest(prev, depth);
+		assert(retval.next->nslots == 3);
 
-		nap = crumble_term(term->test.pred, prev, depth);
-		assert(nap.node->nref == 0);
-		retval.node->slots[0].subst = nap.node;
-		nap.node->nref = 1;
-		nap.node->backref = &retval.node->slots[0];
-		retval.prev = prev = nap.prev;
+		struct slot_and_prev sap =
+			crumble_flatten(term->test.pred, prev, depth);
+		assert(slot_is_ref(sap.slot));
+		if (sap.slot.variety == SLOT_SUBST) {
+			assert(sap.slot.subst != prev);
+			assert(sap.slot.subst->nref == 0);
+			sap.slot.subst->nref = 1;
+			sap.slot.subst->backref = &retval.next->slots[0];
+		}
+		retval.next->slots[SLOT_TEST_PRED] = sap.slot;
+		retval.prev = sap.prev;
 
 		/*
 		 * The consequent and alternative are referenced by the
 		 * test node but not evaluated until *after* the test.
 		 * Based on the test's outcome, reduction will attach
 		 * one or the other to the reduction environment in
-		 * place of the test node.
+		 * place of the test node.  Unlike an abstraction body,
+		 * these bodies are at the same depth as the test itself
+		 * since tests lack a name-binding construct.
 		 */
 		assert(term->test.ncsqs == 1);
-		nap = crumble_term(term->test.csqs[0], STAR, depth);
-		assert(nap.node->nref == 0);
-		retval.node->slots[1].subst = nap.node;
-		retval.node->slots[2].subst = nap.prev;
+		retval.next->slots[SLOT_TEST_CSQ].subst =
+			crumble_chain(term->test.csqs[0], depth);
 		assert(term->test.nalts == 1);
-		nap = crumble_term(term->test.alts[0], STAR, depth);
-		assert(nap.node->nref == 0);
-		retval.node->slots[3].subst = nap.node;
-		retval.node->slots[4].subst = nap.prev;
+		retval.next->slots[SLOT_TEST_ALT].subst =
+			crumble_chain(term->test.alts[0], depth);
 		break;
 	}
 	default:
@@ -233,5 +282,5 @@ crumble_term(struct term *term, struct node *prev, unsigned depth)
 
 struct node *crumble(struct term *term)
 {
-	return crumble_term(term, STAR, 0).prev;
+	return crumble_chain(term, 0);
 }

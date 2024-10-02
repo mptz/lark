@@ -1,9 +1,0 @@
-|* Combinators for SKI combinatorial logic
-I := [x? x]
-K := [x? [_? x]]
-S := [x? [y? [z? (z; x) (z; y)]]]
-
-|* Combinators from Haskell Curry's B, C, K, W system
-B := [x? [y? [z? z; y; x]]]
-C := [x? [y? [z? y; x (z)]]]
-W := [x? [y? y; x (y)]]

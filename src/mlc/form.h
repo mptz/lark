@@ -36,7 +36,11 @@ enum form_variety {
 	FORM_ABS,
 	FORM_APP,
 	FORM_FIX,
-	FORM_OPER,
+	FORM_OP1,
+	FORM_OP2,
+	FORM_PAIR,
+	FORM_PRIM,
+	FORM_NIL,
 	FORM_NUM,
 	FORM_TEST,
 	FORM_VAR,
@@ -55,10 +59,13 @@ struct form {
 	union {
 		struct { struct form *self, *params, *bodies; } abs;
 		struct { struct form *fun, *args; } app;
-		struct { int op; struct form *lhs, *rhs; } oper;
+		struct { unsigned op; struct form *arg; } op1;
+		struct { unsigned op; struct form *lhs, *rhs; } op2;
+		struct { struct form *car, *cdr; } pair;
 		struct { struct form *pred, *csq, *alt; } test;
 		struct { symbol_mt name; } var;
 		double num;
+		unsigned prim;
 	};
 };
 
@@ -68,7 +75,11 @@ extern struct form *FormApp(struct form *fun, struct form *args,
 extern struct form *FormFix(struct form *self, struct form *params,
 			    struct form *bodies);
 extern struct form *FormNum(double num);
-extern struct form *FormOper(int op, struct form *lhs, struct form *rhs);
+extern struct form *FormOp1(int op, struct form *arg);
+extern struct form *FormOp2(int op, struct form *lhs, struct form *rhs);
+extern struct form *FormNil(void);
+extern struct form *FormPair(struct form *car, struct form *cdr);
+extern struct form *FormPrim(unsigned prim);
 extern struct form *FormTest(struct form *pred, struct form *csq,
 			     struct form *alt);
 extern struct form *FormVar(symbol_mt name);

@@ -18,22 +18,22 @@
 198.91e+028
 
 |* Numbers appearing in various places in terms
-[x? x] (3843)
-270 [y? y]
+[x. x] (3843)
+270 [y. y]
 98.6 (t)
 309 (8675)
-[y? -123] (-456)
-[a, b? [c? a (999, b)]] (888, 777)
-[z, x? [f, y? f (y, x, z, x, 2, 3, 4)]] (1.5, 3.75) (q, 9.99)
+[y. -123] (-456)
+[a, b. [c. a (999, b)]] (888, 777)
+[z, x. [f, y. f (y, x, z, x, 2, 3, 4)]] (1.5, 3.75) (q, 9.99)
 
 |* Number passed into functions as arguments
-number-receiver := [n? n]
+number-receiver := [n. n]
 number-receiver (37)
-two-numbers-receiver := [x, y? y (x)]
+two-numbers-receiver := [x, y. y (x)]
 two-numbers-receiver (32, number-receiver (64))
 
 |* Numbers returned from functions w/self-application
 |* This previously caused a panic in the copying phase of beta-reduction.
-number-returner := [_? 38]
-use-number-returner := [f? [_? f (f)]]
+number-returner := [_. 38]
+use-number-returner := [f. [_. f (f)]]
 use-number-returner (number-returner)

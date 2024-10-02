@@ -68,6 +68,11 @@ struct form *FormFix(struct form *self, struct form *params,
 	return form;
 }
 
+struct form *FormNil(void)
+{
+	return form_alloc(FORM_NIL);
+}
+
 struct form *FormNum(double num)
 {
 	struct form *form = form_alloc(FORM_NUM);
@@ -75,12 +80,35 @@ struct form *FormNum(double num)
 	return form;
 }
 
-struct form *FormOper(int op, struct form *lhs, struct form *rhs)
+struct form *FormOp1(int op, struct form *arg)
 {
-	struct form *form = form_alloc(FORM_OPER);
-	form->oper.op = op;
-	form->oper.lhs = lhs;
-	form->oper.rhs = rhs;
+	struct form *form = form_alloc(FORM_OP1);
+	form->op1.op = op;
+	form->op1.arg = arg;
+	return form;
+}
+
+struct form *FormOp2(int op, struct form *lhs, struct form *rhs)
+{
+	struct form *form = form_alloc(FORM_OP2);
+	form->op2.op = op;
+	form->op2.lhs = lhs;
+	form->op2.rhs = rhs;
+	return form;
+}
+
+struct form *FormPair(struct form *car, struct form *cdr)
+{
+	struct form *form = form_alloc(FORM_PAIR);
+	form->pair.car = car;
+	form->pair.cdr = cdr;
+	return form;
+}
+
+struct form *FormPrim(unsigned prim)
+{
+	struct form *form = form_alloc(FORM_PRIM);
+	form->prim = prim;
 	return form;
 }
 
@@ -120,9 +148,14 @@ void form_free(struct form *form)
 	case FORM_FIX:	form_free(form->abs.self);
 			form_free_rl(form->abs.params);
 			form_free_rl(form->abs.bodies); break;
+	case FORM_NIL:	/* nada */; break;
 	case FORM_NUM:	/* nada */; break;
-	case FORM_OPER:	form_free(form->oper.lhs);
-			form_free(form->oper.rhs); break;
+	case FORM_OP1:	form_free(form->op1.arg); break;
+	case FORM_OP2:	form_free(form->op2.lhs);
+			form_free(form->op2.rhs); break;
+	case FORM_PAIR:	form_free(form->pair.car);
+			form_free(form->pair.cdr); break;
+	case FORM_PRIM:	/* nada */; break;
 	case FORM_TEST:	form_free(form->test.pred);
 			form_free_rl(form->test.csq);
 			form_free_rl(form->test.alt); break;
@@ -177,7 +210,7 @@ static void form_print_helper(const struct form *form, bool spine, bool nest)
 		assert(form->abs.self == NULL);
 		putchar('[');
 		form_print_lr(form->abs.params);
-		putchar('?');
+		putchar('.');
 		putchar(' ');
 		form_print_lr(form->abs.bodies);
 		putchar(']');
@@ -256,23 +289,40 @@ static void form_print_helper(const struct form *form, bool spine, bool nest)
 		putchar('!');
 		putchar(' ');
 		form_print_lr(form->abs.params);
-		putchar('?');
+		putchar('.');
 		putchar(' ');
 		form_print_lr(form->abs.bodies);
 		putchar(']');
 		break;
+	case FORM_NIL:
+		fputs("[]", stdout);
+		break;
 	case FORM_NUM:
 		printf("%g", form->num);
 		break;
-	case FORM_OPER:
-		form_print_helper(form->oper.lhs, false, false);
-		printf(" %s ", prim_symbol(form->oper.op));
-		form_print_helper(form->oper.rhs, false, false);
+	case FORM_OP1:
+		printf("%s ", prim_name(form->op1.op));
+		form_print_helper(form->op1.arg, false, false);
+		break;
+	case FORM_OP2:
+		form_print_helper(form->op2.lhs, false, false);
+		printf(" %s ", prim_name(form->op2.op));
+		form_print_helper(form->op2.rhs, false, false);
+		break;
+	case FORM_PAIR:
+		putchar('[');
+		form_print(form->pair.car);
+		fputs(" | ", stdout);
+		form_print(form->pair.cdr);
+		putchar(']');
+		break;
+	case FORM_PRIM:
+		fputs(prim_name(form->prim), stdout);
 		break;
 	case FORM_TEST:
 		putchar('[');
 		form_print(form->test.pred);
-		fputs(". ", stdout);
+		fputs("? ", stdout);
 		form_print_lr(form->test.csq);
 		fputs(" | ", stdout);
 		form_print_lr(form->test.alt);

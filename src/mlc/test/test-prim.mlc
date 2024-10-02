@@ -1,10 +1,125 @@
 |* Test primitive operations.
 
+#include "numeric.mlc"
+
 #echo "Testing primitive addition"
 0 + 0
 0 + 1
 1 + 1
+1 + -1
+-1 + -1
+997 + 3
+77 + -76
+
+#echo "Testing primitive subtraction"
+0 - 0
+0 - 1
+1 - 1
+1 - 0
+-1 - 1
+1 - -1
+27 - 30
+50 - 25
+5e6 - 1
+5e6 - 10
+5e6 - 1000000
+
+#echo "Testing primitive multiplication"
+0 * 0
+0 * 1
+1 * 0
+1 * 1
+1 * 2
+2 * 2
+-2 * 2
+-2 * -2
+1.001 * 1.001
+
+#echo "Testing primitive division"
+1 / 1
+2 / 1
+2 / 2
+4 / 2
+3 / 2
+3 / -3
+1 / 0
+
+#echo "Testing primitive equalities"
+0 == 0
+0 == 1
+1 == 1
+1 == 0
+1 == -1
+-1 == 1
+1 == 2
+1 + 1 == 2
+5e6 == 5e6 - 1
+0 != 0
+0 != 1
+1 != 1
+1 != 0
+1 != -1
+-1 != 1
+1 != 2
+1 + 1 != 2
+5e6 != 5e6 - 1
+
+#echo "Testing primitive inequalities"
+0 < 0
+0 < 1
+-1 < 0
+-1 < 1
+1 < -1
+1 < 2
+1 < 1
+2 < 1
+2 < 2
+-2 < -2
+0 <= 0
+0 <= 1
+-1 <= 0
+-1 <= 1
+1 <= -1
+1 <= 2
+1 <= 1
+2 <= 1
+2 <= 2
+-2 <= -2
+0 > 0
+0 > 1
+-1 > 0
+-1 > 1
+1 > -1
+1 > 2
+1 > 1
+2 > 1
+2 > 2
+-2 > -2
+0 >= 0
+0 >= 1
+-1 >= 0
+-1 >= 1
+1 >= -1
+1 >= 2
+1 >= 1
+2 >= 1
+2 >= 2
+-2 >= -2
+
+#echo "Testing order of operations"
+3 + 5 * 5
+9 - 2 / 2
+3 == 1.5 + 1.5
+
+#echo "Testing irreducible primitives"
 x + 0
+0 + x
+x + y
+[x. 4 + x] + 2
+a == 5
+5 == a
+a == b
+[x, y. x == y]
 
 #echo "Testing numeric library functions"
 nth-fib (30)

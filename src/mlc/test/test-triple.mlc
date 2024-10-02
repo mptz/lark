@@ -1,3 +1,6 @@
+#include "church.mlc"
+#include "div.mlc"
+
 #echo "Testing closed triples"
 triple	:= cons3 (eight, cons (five, two), three)
 triple; trip1

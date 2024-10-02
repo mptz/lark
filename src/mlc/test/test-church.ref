@@ -1,217 +1,335 @@
 Testing zero, succ, zerop
 form: zerop (zero)
-norm: [x? [_? x]]
+norm: [x. [_. x]]
 read: True
 ======================================================================
 form: zerop (one)
-norm: [_? [y? y]]
+norm: [_. [y. y]]
 read: False
 read: 0
 ======================================================================
 form: zerop (seven)
-norm: [_? [y? y]]
+norm: [_. [y. y]]
 read: False
 read: 0
 ======================================================================
 form: succ (zero)
-norm: [f? [x? x; f]]
+norm: [f. [x. x; f]]
 read: 1
 ======================================================================
 form: succ (one)
-norm: [f? [x? x; f; f]]
+norm: [f. [x. x; f; f]]
 read: 2
 ======================================================================
 form: succ (seven)
-norm: [f? [x? x; f; f; f; f; f; f; f; f]]
+norm: [f. [x. x; f; f; f; f; f; f; f; f]]
 read: 8
 ======================================================================
 form: succ (zero); zerop
-norm: [_? [y? y]]
+norm: [_. [y. y]]
 read: False
 read: 0
 ======================================================================
 form: succ (zero); zerop; not
-norm: [a? [b? a]]
+norm: [a. [b. a]]
 read: True
 ======================================================================
 Testing add
 form: add (zero, zero)
-norm: [f? [x? x]]
+norm: [f. [x. x]]
 read: False
 read: 0
 ======================================================================
 form: add (zero, one)
-norm: [f? [x? x; f]]
+norm: [f. [x. x; f]]
 read: 1
 ======================================================================
 form: add (one, zero)
-norm: [f? [x? x; f]]
+norm: [f. [x. x; f]]
 read: 1
 ======================================================================
 form: add (zero, five)
-norm: [f? [x? x; f; f; f; f; f]]
+norm: [f. [x. x; f; f; f; f; f]]
 read: 5
 ======================================================================
 form: add (five, zero)
-norm: [f? [x? x; f; f; f; f; f]]
+norm: [f. [x. x; f; f; f; f; f]]
 read: 5
 ======================================================================
 form: add (one, one)
-norm: [f? [x? x; f; f]]
+norm: [f. [x. x; f; f]]
 read: 2
 ======================================================================
 form: add (four, five)
-norm: [f? [x? x; f; f; f; f; f; f; f; f; f]]
+norm: [f. [x. x; f; f; f; f; f; f; f; f; f]]
 read: 9
 ======================================================================
 Testing mult
 form: mult (zero, zero)
-norm: [f? [x? x]]
+norm: [f. [x. x]]
 read: False
 read: 0
 ======================================================================
 form: mult (zero, four)
-norm: [f? [x? x]]
+norm: [f. [x. x]]
 read: False
 read: 0
 ======================================================================
 form: mult (four, zero)
-norm: [f? [x? x]]
+norm: [f. [x. x]]
 read: False
 read: 0
 ======================================================================
 form: mult (one, one)
-norm: [f? [x? x; f]]
+norm: [f. [x. x; f]]
 read: 1
 ======================================================================
 form: mult (one, six)
-norm: [f? [x? x; f; f; f; f; f; f]]
+norm: [f. [x. x; f; f; f; f; f; f]]
 read: 6
 ======================================================================
 form: mult (six, one)
-norm: [f? [x? x; f; f; f; f; f; f]]
+norm: [f. [x. x; f; f; f; f; f; f]]
 read: 6
 ======================================================================
 form: mult (five, six)
-norm: [f? [x? x; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f]]
+norm: [f. [x. x; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f]]
 read: 30
 ======================================================================
 form: mult (ten, ten)
-norm: [f? [x? x; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f]]
+norm: [f. [x. x; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f]]
 read: 100
 ======================================================================
 Testing square and cube
 form: square (zero)
-norm: [f? [x? x]]
+norm: [f. [x. x]]
 read: False
 read: 0
 ======================================================================
 form: square (one)
-norm: [f? [x? x; f]]
+norm: [f. [x. x; f]]
 read: 1
 ======================================================================
 form: square (three)
-norm: [f? [x? x; f; f; f; f; f; f; f; f; f]]
+norm: [f. [x. x; f; f; f; f; f; f; f; f; f]]
 read: 9
 ======================================================================
 form: square (six)
-norm: [f? [x? x; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f]]
+norm: [f. [x. x; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f]]
 read: 36
 ======================================================================
 form: cube (zero)
-norm: [f? [x? x]]
+norm: [f. [x. x]]
 read: False
 read: 0
 ======================================================================
 form: cube (one)
-norm: [f? [x? x; f]]
+norm: [f. [x. x; f]]
 read: 1
 ======================================================================
 form: cube (three)
-norm: [f? [x? x; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f]]
+norm: [f. [x. x; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f]]
 read: 27
 ======================================================================
 form: cube (six)
-norm: [f? [x? x; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f]]
+norm: [f. [x. x; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f; f]]
 read: 216
 ======================================================================
 Testing pow
 form: add (pow (zero, zero), three)
-norm: [f? [x? x; f; f; f; f]]
+norm: [f. [x. x; f; f; f; f]]
 read: 4
 ======================================================================
 form: add (two, pow (five, zero))
-norm: [f? [x? x; f; f; f]]
+norm: [f. [x. x; f; f; f]]
 read: 3
 ======================================================================
 form: pow (zero, one)
-norm: [x? [xA? xA]]
+norm: [x. [xA. xA]]
 read: False
 read: 0
 ======================================================================
 form: pow (six, one)
-norm: [x? [xB? xB; x; x; x; x; x; x]]
+norm: [x. [xB. xB; x; x; x; x; x; x]]
 read: 6
 ======================================================================
 form: pow (two, five)
-norm: [x? [xC? xC; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x]]
+norm: [x. [xC. xC; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x]]
 read: 32
 ======================================================================
 form: pow (four, four)
-norm: [x? [xD? xD; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x]]
+norm: [x. [xD. xD; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x; x]]
 read: 256
 ======================================================================
 Testing primitive pred and sub
 form: pred-primitive (one)
-norm: [f? [x? x]]
+norm: [f. [x. x]]
 read: False
 read: 0
 ======================================================================
 form: pred-primitive (five)
-norm: [f? [x? x; f; f; f; f]]
+norm: [f. [x. x; f; f; f; f]]
 read: 4
 ======================================================================
 form: sub-primitive (four, four)
-norm: [f? [x? x]]
+norm: [f. [x. x]]
 read: False
 read: 0
 ======================================================================
 form: sub-primitive (three, two)
-norm: [f? [x? x; f]]
+norm: [f. [x. x; f]]
 read: 1
 ======================================================================
 form: sub-primitive (five, two)
-norm: [f? [x? x; f; f; f]]
+norm: [f. [x. x; f; f; f]]
 read: 3
 ======================================================================
 form: sub-primitive (seven, six)
-norm: [f? [x? x; f]]
+norm: [f. [x. x; f]]
 read: 1
 ======================================================================
 Testing addition-based pred and sub
 form: pred-addition (one)
-norm: [f? [x? x]]
+norm: [f. [x. x]]
 read: False
 read: 0
 ======================================================================
 form: pred-addition (five)
-norm: [f? [x? x; f; f; f; f]]
+norm: [f. [x. x; f; f; f; f]]
 read: 4
 ======================================================================
 form: sub-addition (four, four)
-norm: [f? [x? x]]
+norm: [f. [x. x]]
 read: False
 read: 0
 ======================================================================
 form: sub-addition (three, two)
-norm: [f? [x? x; f]]
+norm: [f. [x. x; f]]
 read: 1
 ======================================================================
 form: sub-addition (five, two)
-norm: [f? [x? x; f; f; f]]
+norm: [f. [x. x; f; f; f]]
 read: 3
 ======================================================================
 form: sub-addition (seven, six)
-norm: [f? [x? x; f]]
+norm: [f. [x. x; f]]
 read: 1
+======================================================================
+Testing pairs
+form: car (pair)
+norm: [f. [x. x; f; f; f; f]]
+read: 4
+======================================================================
+form: cdr (pair)
+norm: [f. [x. x; f; f]]
+read: 2
+======================================================================
+Testing lists, nil, and nullp
+form: nullp (nil)
+norm: [x. [_. x]]
+read: True
+======================================================================
+form: nullp (pair)
+norm: [_. [y. y]]
+read: False
+read: 0
+======================================================================
+form: nullp (list)
+norm: [_. [y. y]]
+read: False
+read: 0
+======================================================================
+form: list; car
+norm: [f. [x. x; f; f; f]]
+read: 3
+======================================================================
+form: list; cdr; car
+norm: [f. [x. x; f; f]]
+read: 2
+======================================================================
+Testing pred and sub
+form: pred (zero)
+norm: [f. [x. x]]
+read: False
+read: 0
+======================================================================
+form: pred (one)
+norm: [f. [x. x]]
+read: False
+read: 0
+======================================================================
+form: pred (eight)
+norm: [f. [x. x; f; f; f; f; f; f; f]]
+read: 7
+======================================================================
+form: sub (two, two)
+norm: [f. [x. x]]
+read: False
+read: 0
+======================================================================
+form: sub (seven, four)
+norm: [f. [x. x; f; f; f]]
+read: 3
+======================================================================
+Testing leq
+form: leq (zero, zero)
+norm: [x. [_. x]]
+read: True
+======================================================================
+form: leq (four, two)
+norm: [_. [y. y]]
+read: False
+read: 0
+======================================================================
+form: leq (two, four)
+norm: [x. [_. x]]
+read: True
+======================================================================
+form: leq (four, four)
+norm: [x. [_. x]]
+read: True
+======================================================================
+Testing lt
+form: lt (zero, zero)
+norm: [a. [b. b]]
+read: False
+read: 0
+======================================================================
+form: lt (four, two)
+norm: [a. [b. b]]
+read: False
+read: 0
+======================================================================
+form: lt (two, four)
+norm: [a. [b. a]]
+read: True
+======================================================================
+form: lt (four, four)
+norm: [a. [b. b]]
+read: False
+read: 0
+======================================================================
+Testing lists with free variables
+form: fruits; car
+norm: apple
+======================================================================
+form: fruits; cdr; car
+norm: banana
+======================================================================
+form: fruits; cdr; cdr; car
+norm: cherry
+======================================================================
+form: fruits; nullp
+norm: [_. [y. y]]
+read: False
+read: 0
+======================================================================
+form: fruits; cdr; cdr; cdr; nullp
+norm: [_. [y. y]]
+read: False
+read: 0
+======================================================================
+form: fruits; cdr; cdr; cdr; cdr; nullp
+norm: [x. [_. x]]
+read: True
 ======================================================================

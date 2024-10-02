@@ -6,4 +6,4 @@ make_binary(mlc, beta.c crumble.c env.c form.c heap.c interpret.c
 export MLC_INCLUDE := lib/mlc
 
 %.runout %.runerr: %.mlc $(subdir)mlc
-	src/mlc/mlc -q $*.mlc > $*.runout 2> $*.runerr
+	src/mlc/mlc -eq $*.mlc > $*.runout 2> $*.runerr

@@ -1,3 +1,5 @@
+#include "church.mlc"
+
 #echo "Testing zero, succ, zerop"
 zerop (zero)
 zerop (one)
@@ -66,3 +68,44 @@ sub-addition (four, four)
 sub-addition (three, two)
 sub-addition (five, two)
 sub-addition (seven, six)
+
+#echo "Testing pairs"
+pair := cons (four, two)
+car (pair)
+cdr (pair)
+
+#echo "Testing lists, nil, and nullp"
+nullp (nil)
+nullp (pair)
+list := cons (three, cons (two, cons (one, nil)))
+nullp (list)
+list; car
+list; cdr; car
+
+#echo "Testing pred and sub"
+pred (zero)
+pred (one)
+pred (eight)
+sub (two, two)
+sub (seven, four)
+
+#echo "Testing leq"
+leq (zero, zero)
+leq (four, two)
+leq (two, four)
+leq (four, four)
+
+#echo "Testing lt"
+lt (zero, zero)
+lt (four, two)
+lt (two, four)
+lt (four, four)
+
+#echo "Testing lists with free variables"
+fruits := cons (apple, cons (banana, cons (cherry, cons (durian, nil))))
+fruits; car
+fruits; cdr; car
+fruits; cdr; cdr; car
+fruits; nullp
+fruits; cdr; cdr; cdr; nullp
+fruits; cdr; cdr; cdr; cdr; nullp

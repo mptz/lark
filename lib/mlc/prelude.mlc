@@ -1,8 +1,2 @@
-#include "logic.mlc"
-#include "church.mlc"
 #include "list.mlc"
-#include "triple.mlc"
-#include "div.mlc"
-#include "integer.mlc"
-#include "ski.mlc"
 #include "numeric.mlc"

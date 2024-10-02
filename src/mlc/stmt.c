@@ -53,7 +53,7 @@ static void node_listing(const char *label, struct node *node)
 		node_list_rl(node);
 	} else {
 		putchar(' ');
-		node_print_rl(node);
+		node_print_body(node);
 		putchar('\n');
 	}
 }
@@ -98,8 +98,8 @@ void stmt_list(struct form *form)
 	}
 
 	struct node *node = crumble(term);
-	node_listing("crum", node);
-	node_free_env(node);
+	node_listing("crum", node->prev);
+	node_free(node);
 
 	fputs("==================================="
 	      "===================================\n", stdout);
@@ -133,7 +133,7 @@ void stmt_reduce(struct form *form)
 
 	term = uncrumble(node);
 	assert(term);
-	node_free_env(node);
+	node_free(node);
 	node = NULL;
 	if (!quiet_setting) {
 		fputs("term: ", stdout);

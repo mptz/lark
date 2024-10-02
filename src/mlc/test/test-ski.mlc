@@ -1,3 +1,15 @@
+#include "church.mlc"
+
+|* Combinators for SKI combinatorial logic
+I := [x. x]
+K := [x. [_. x]]
+S := [x. [y. [z. (z; x) (z; y)]]]
+
+|* Combinators from Haskell Curry's B, C, K, W system
+B := [x. [y. [z. z; y; x]]]
+C := [x. [y. [z. y; x (z)]]]
+W := [x. [y. y; x (y)]]
+
 #echo "Testing S, K, I combinators"
 I (seven)
 K (six) (three)
@@ -28,3 +40,11 @@ W (K)
 S
 B (B (W; B) (C)) (B; B)
 B (W; B) (B (B) (C))
+
+#echo "Testing SCAM name capture case"
+|* This is the term which alerted me to the fact that the the paper's
+|* handling of bound variables in alpha conversion was erronous--they're
+|* not alpha-converted so we end up with inadvertant capture.  That's
+|* what set me down the road of adding De Bruijn indexes alongside
+|* memory-address-based free variables and explicit substitution nodes.
+S (K (S)) (K)

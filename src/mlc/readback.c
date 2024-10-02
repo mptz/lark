@@ -96,8 +96,10 @@ static struct form *readback_app(const struct term *app, struct wordbuf *names)
 		arg->prev = args, args = arg;
 	}
 	if (app->app.fun->variety == TERM_PRIM) {
-		assert(app->app.nargs == 2);
-		return FormOper(app->app.fun->prim, args->prev, args);
+		assert(app->app.nargs == 1 || app->app.nargs == 2);
+		return app->app.nargs == 1 ?
+			FormOp1(app->app.fun->prim, args) :
+			FormOp2(app->app.fun->prim, args->prev, args);
 	}
 	return FormApp(readback_term(app->app.fun, names), args,
 		       FORM_SYNTAX_AUTO);
@@ -165,8 +167,15 @@ static struct form *readback_term(const struct term *term,
 		return readback_name(term->bv.up, term->bv.across, names);
 	case TERM_FREE_VAR:
 		return FormVar(term->fv.name);
+	case TERM_NIL:
+		return FormNil();
 	case TERM_NUM:
 		return FormNum(term->num);
+	case TERM_PAIR:
+		return FormPair(readback_term(term->pair.car, names),
+				readback_term(term->pair.cdr, names));
+	case TERM_PRIM:
+		return FormPrim(term->prim);
 	case TERM_TEST:
 		return readback_test(term, names);
 	default:

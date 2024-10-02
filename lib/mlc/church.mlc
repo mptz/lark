@@ -1,47 +1,76 @@
-|* Basic operations on Church numerals
+|* Basic operations on Church numerals and other pure Lambda-calculus
+|* representations.  Even though MLC supports a variety of primitive
+|* functionality, these representations and operations remain useful
+|* in testing evaluation.
+
+|* Basic concepts; not all useful but here for tradition.
+id	:= [x. x]
+bottom	:= [w. w; w] [w. w; w]
+explode := [w. w; w; w] [w. w; w; w]
+
+|* Boolean logic operations
+true	:= [x. [_. x]]
+false	:= [_. [y. y]]
+and	:= [p, q. p; p (q)]
+or	:= [p, q. q; p (p)]
+not	:= [p. [a. [b. a; p (b)]]]
 
 |* 0 is represented by the 0-fold composition of f, i.e. the function
 |* which applies f to x 0 times.  To test for zero, apply the constant-
 |* false function to true n-fold; the result will be true iff n is 0.
-zero	:= [f? [x? x]]
-kfalse	:= [_? false]
-zerop	:= [n? true; n (kfalse)]
+zero	:= [f. [x. x]]
+kfalse	:= [_. false]
+zerop	:= [n. true; n (kfalse)]
 
 |* The successor to n is a function which applies the n-fold composition
 |* of f to x, then applies f one more time.
-succ	:= [n? [f? [x? x; n (f); f]]]
+succ	:= [n. [f. [x. x; n (f); f]]]
 
 |* To add m and n, apply the m-fold then the n-fold composition of f to x;
 |* to multiply, take the m-fold composition *of* f's n-fold composition.
-add	:= [m, n? [f? [x? x; m (f); n (f)]]]
-mult	:= [m, n? [f? f; n; m]]
+add	:= [m, n. [f. [x. x; m (f); n (f)]]]
+mult	:= [m, n. [f. f; n; m]]
 
 |* We could write square in terms of multiplication i.e. as mult (n, n),
 |* but that expression normalizes to the elementary version written here.
-square	:= [n? [f? f; n; n]]
-cube	:= [n? [f? f; n; n; n]]
+square	:= [n. [f. f; n; n]]
+cube	:= [n. [f. f; n; n; n]]
 
-pow	:= [b, e? b; e]
+pow	:= [b, e. b; e]
 
 |* Primitive version of predecessor
-pred-primitive	:= [n? [f? [x? id; ([_? x]; n ([g? [h? f; g; h]]))]]]
+pred-primitive	:= [n. [f. [x. id; ([_. x]; n ([g. [h. f; g; h]]))]]]
 
 |* Starting from m, apply the n-fold composition of predecessor
-sub-primitive	:= [m, n? m; n (pred-primitive)]
+sub-primitive	:= [m, n. m; n (pred-primitive)]
 
 |* Define some numbers directly rather than with SUCC
-one	:= [f? [x? x; f]]
-two	:= [f? [x? x; f; f]]
-three	:= [f? [x? x; f; f; f]]
-four	:= [f? [x? x; f; f; f; f]]
-five	:= [f? [x? x; f; f; f; f; f]]
-six	:= [f? [x? x; f; f; f; f; f; f]]
-seven	:= [f? [x? x; f; f; f; f; f; f; f]]
-eight	:= [f? [x? x; f; f; f; f; f; f; f; f]]
-nine	:= [f? [x? x; f; f; f; f; f; f; f; f; f]]
-ten	:= [f? [x? x; f; f; f; f; f; f; f; f; f; f]]
+one	:= [f. [x. x; f]]
+two	:= [f. [x. x; f; f]]
+three	:= [f. [x. x; f; f; f]]
+four	:= [f. [x. x; f; f; f; f]]
+five	:= [f. [x. x; f; f; f; f; f]]
+six	:= [f. [x. x; f; f; f; f; f; f]]
+seven	:= [f. [x. x; f; f; f; f; f; f; f]]
+eight	:= [f. [x. x; f; f; f; f; f; f; f; f]]
+nine	:= [f. [x. x; f; f; f; f; f; f; f; f; f]]
+ten	:= [f. [x. x; f; f; f; f; f; f; f; f; f; f]]
 
 |* Predecessor and subtraction based on addition + truth testing
-pred-addition	:= [n? zero; ([_? zero]; \
-			n ([g? [k? zerop (one; g) (k) (add (g (k), one))]]))]
-sub-addition	:= [m, n? m; n (pred-addition)]
+pred-addition	:= [n. zero; ([_. zero]; \
+			n ([g. [k. zerop (one; g) (k) (add (g (k), one))]]))]
+sub-addition	:= [m, n. m; n (pred-addition)]
+
+|* List operations in pure Lambda-calculus
+cons	:= [x, y. [f. y; f (x)]]
+car	:= [p. true; p]
+cdr	:= [p. false; p]
+nil	:= [_. true]
+nullp	:= [p. [_. [_. false]]; p]
+
+|* A list-based predecessor with better performance than other approaches
+phi	:= [x. cons (x; cdr, x; cdr; succ)]
+pred	:= [n. cons (zero, zero); n (phi); car]
+sub	:= [m, n. m; n (pred)]
+leq	:= [m, n. sub (m, n); zerop]
+lt	:= [m, n. sub (n, m); zerop; not]

@@ -38,7 +38,7 @@
 %union {
 	struct form *form;
 	const char *str;
-	int variety;
+	int prim;
 }
 
 %{
@@ -55,17 +55,21 @@ static int mlc_yyerror(mlc_yyscan_t scanner, const char *s);
 %token CMD_ECHO
 %token END_OF_LINE
 %token ENV_DUMP
-%token OPEQ OPNE OPLT OPLTE OPGT OPGTE
 %token INCLUDE
 %token LIST
 
+%nonassoc OPEQ OPNE OPLT OPLTE OPGT OPGTE
+%left '+' '-'
+%left '*' '/'
+%precedence OPCAR OPCDR
+
+%token <prim> PRIM
 %token <str> STRING
 %token <form> NUM VARIABLE
 
 %type <form> term terms seq expr factor arith
 %type <form> app app1 appn
-%type <form> base pack abs fix params test var
-%type <variety> oper
+%type <form> base pack abs fix nil pair params prim test var
 
 %%
 
@@ -120,20 +124,30 @@ terms	: term
 seq	: expr
 	| seq ';' expr		{ $$ = FormApp($3, $1, FORM_SYNTAX_POSTFIX); };
 
-expr	: factor | arith;
+expr	: arith;
 
-arith	: factor oper factor	{ $$ = FormOper($2, $1, $3); }
-	| arith oper factor	{ $$ = FormOper($2, $1, $3); };
+arith	: arith OPEQ arith	{ $$ = FormOp2(PRIM_EQ, $1, $3); }
+	| arith OPNE arith	{ $$ = FormOp2(PRIM_NE, $1, $3); }
+	| arith OPLT arith	{ $$ = FormOp2(PRIM_LT, $1, $3); }
+	| arith OPLTE arith	{ $$ = FormOp2(PRIM_LTE, $1, $3); }
+	| arith OPGT arith	{ $$ = FormOp2(PRIM_GT, $1, $3); }
+	| arith OPGTE arith	{ $$ = FormOp2(PRIM_GTE, $1, $3); }
+	| arith '+' arith	{ $$ = FormOp2(PRIM_ADD, $1, $3); }
+	| arith '-' arith	{ $$ = FormOp2(PRIM_SUB, $1, $3); }
+	| arith '*' arith	{ $$ = FormOp2(PRIM_MULT, $1, $3); }
+	| arith '/' arith	{ $$ = FormOp2(PRIM_DIV, $1, $3); }
+	| OPCAR arith		{ $$ = FormOp1(PRIM_CAR, $2); }
+	| OPCDR arith		{ $$ = FormOp1(PRIM_CDR, $2); }
+	| factor;
 
-factor	: abs | fix | test | app | base;
+factor	: abs | fix | nil | pair | test | app | base;
 
-abs	: '[' params '?' terms ']'
-				{ $$ = FormAbs($2, $4); };
-fix	: '[' var '!' params '?' terms ']'
-				{ $$ = FormFix($2, $4, $6); };
-params	: var | params ',' var	{ $$ = $3->prev = $1; $$ = $3; };
-
-test	: '[' term '.' terms '|' terms ']'	{ $$ = FormTest($2, $4, $6); };
+abs	: '[' params '.' terms ']'		{ $$ = FormAbs($2, $4); };
+fix	: '[' var '!' params '.' terms ']'	{ $$ = FormFix($2, $4, $6); };
+params	: var | params ',' var			{ $3->prev = $1; $$ = $3; };
+nil	: '[' ']'				{ $$ = FormNil(); };
+pair	: '[' term '|' term ']'			{ $$ = FormPair($2, $4); };
+test	: '[' term '?' terms '|' terms ']'	{ $$ = FormTest($2, $4, $6); };
 
 app	: app1 abs		{ $$ = FormApp($2, $1, FORM_SYNTAX_POSTFIX); }
 	| app1 fix		{ $$ = FormApp($2, $1, FORM_SYNTAX_POSTFIX); }
@@ -153,19 +167,9 @@ pack	: '(' ')'		{ $$ = NULL; }
 	| '(' terms ')'		{ $$ = $2; }
 	| '(' terms ',' ')'	{ $$ = $2; }
 
-base	: NUM | var | pack;
+base	: NUM | prim | var | pack;
 
-oper	: '+'	{ $$ = PRIM_ADD; }
-	| '-'	{ $$ = PRIM_SUB; }
-	| '*'	{ $$ = PRIM_MULT; }
-	| '/'	{ $$ = PRIM_DIV; }
-	| OPEQ	{ $$ = PRIM_EQ; }
-	| OPNE	{ $$ = PRIM_NE; }
-	| OPLT	{ $$ = PRIM_LT; }
-	| OPLTE	{ $$ = PRIM_LTE; }
-	| OPGT	{ $$ = PRIM_GT; }
-	| OPGTE	{ $$ = PRIM_GTE; };
-
+prim	: PRIM			{ $$ = FormPrim($1); };
 var	: VARIABLE | '_'	{ $$ = FormVar(the_placeholder_symbol); };
 
 %%

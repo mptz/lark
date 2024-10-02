@@ -25,6 +25,7 @@
 #include "mlc.h"
 #include "mlc.lex.h"
 #include "mlc.tab.h"
+#include "prim.h"
 
 /*
  * This is a terrible hack required (AFACT) to compile on older versions
@@ -75,6 +76,11 @@ _		return '_';
 \>=		return OPGTE;
 \:=		return ASSIGN;
 \n		return END_OF_LINE;
+
+#0		return OPCAR;
+#1		return OPCDR;
+#is-nil		yylval->prim = PRIM_ISNIL;	return PRIM;
+#is-pair	yylval->prim = PRIM_ISPAIR;	return PRIM;
 
 #echo		return CMD_ECHO;
 #env		return ENV_DUMP;

@@ -69,8 +69,15 @@ static struct term *term_bind(struct term *term, int depth,
 			if (formals[i] == term->fv.name)
 				return TermBoundVar(depth, i, term->fv.name);
 		break;
+	case TERM_NIL:
 	case TERM_NUM:
 	case TERM_PRIM:
+		break;
+	case TERM_PAIR:
+		term->pair.car = term_bind(term->pair.car, depth,
+					   nformals, formals);
+		term->pair.cdr = term_bind(term->pair.cdr, depth,
+					   nformals, formals);
 		break;
 	case TERM_TEST:
 		term->test.pred = term_bind(term->test.pred, depth,
@@ -261,17 +268,32 @@ static struct term *form_convert(const struct form *form,
 		return TermApp(form_convert(form->app.fun, defs, context),
 			       nargs, args);
 	}
+	case FORM_NIL:
+		return TermNil();
 	case FORM_NUM:
 		return TermNum(form->num);
-	case FORM_OPER: {
-		const size_t nargs = 2;	/* for now, at least */
+	case FORM_OP1: {
+		const size_t nargs = 1;
 		struct term **args = xmalloc(sizeof *args * nargs),
 			    **dst = args + nargs;
-		*--dst = form_convert(form->oper.rhs, defs, context);
-		*--dst = form_convert(form->oper.lhs, defs, context);
+		*--dst = form_convert(form->op1.arg, defs, context);
 		assert(dst == args);
-		return TermApp(TermPrim(form->oper.op), nargs, args);
+		return TermApp(TermPrim(form->op1.op), nargs, args);
 	}
+	case FORM_OP2: {
+		const size_t nargs = 2;
+		struct term **args = xmalloc(sizeof *args * nargs),
+			    **dst = args + nargs;
+		*--dst = form_convert(form->op2.rhs, defs, context);
+		*--dst = form_convert(form->op2.lhs, defs, context);
+		assert(dst == args);
+		return TermApp(TermPrim(form->op2.op), nargs, args);
+	}
+	case FORM_PAIR:
+		return TermPair(form_convert(form->pair.car, defs, context),
+				form_convert(form->pair.cdr, defs, context));
+	case FORM_PRIM:
+		return TermPrim(form->prim);
 	case FORM_TEST: {
 		size_t ncsq = form_length(form->test.csq),
 		       nalt = form_length(form->test.alt);

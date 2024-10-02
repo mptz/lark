@@ -9,6 +9,13 @@
 |* slower than a Y combinator version, as most of the time is spend in the
 |* subtraction and comparison reductions during the actual division process.
 
+|* Helpers for 3-tuples in pure lambda calculus.
+|*
+cons3	:= [x, y, z. [f. f (x, y, z)]]
+trip1	:= [t. [x, _, _. x]; t]
+trip2	:= [t. [_, y, _. y]; t]
+trip3	:= [t. [_, _, z. z]; t]
+
 |* One iterative step of the division.  Parameterized by divisor; given
 |* the current state.  The state is a 3-triple whose first element is
 |* the transition function to be used to calculate the next step given
@@ -17,18 +24,20 @@
 |* While dividing, state is (divide step function, subtrahend, accumulator).
 |* Equilibrium state is (identity function, remainder, quotient).
 |*
-divstep	:= [d? [s? [c? [a? (lt (c, d))					\
+divstep	:= [d. [s. [c. [a. (lt (c, d))					\
 			(cons3 (id, c, a))				\
 			(cons3 (s; trip1, sub (c, d), a; succ))]]	\
 		 (s; trip2) (s; trip3)]]
 
 |* Return a triple whose 2nd and 3rd values are remainder and quotient.
 |* Accomplished by applying 'divstep' m times, where m is the dividend.
-|* XXX the parentheses around [s? s; (s; trip1)] are necessary;
-|* without them the code parses and runs but doesn't normalize as
-|* intended. XXX a hole in the parser.
-divcore	:= [m, n? m ([s? s; (s; trip1)]) (cons3 (n; divstep, m, zero))]
+|*
+|* The parentheses around [s. s; (s; trip1)] are necessary; recall that
+|*	m [x. ...]	applies the given abstraction with argument 'm'
+|*	m (x)		applies 'm' with 'x' as argument
+|*
+divcore	:= [m, n. m ([s. s; (s; trip1)]) (cons3 (n; divstep, m, zero))]
 
-div	:= [m, n? divcore (m, n); trip3]
-mod	:= [m, n? divcore (m, n); trip2]
-divmod	:= [m, n? divcore (m, n); ([t? cons (t; trip3, t; trip2)])]
+div	:= [m, n. divcore (m, n); trip3]
+mod	:= [m, n. divcore (m, n); trip2]
+divmod	:= [m, n. divcore (m, n); [t. [t; trip3 | t; trip2]]]

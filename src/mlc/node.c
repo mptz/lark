@@ -32,15 +32,16 @@
 #include "prim.h"
 #include "term.h"
 
-static struct node *node_alloc(struct node *prev, int depth, size_t nslots)
+static struct node *node_alloc(enum node_variety variety, struct node *prev,
+			       int depth, size_t nslots)
 {
-	assert(nslots);
 	struct node *node = node_heap_alloc(nslots);
-	node->variety = NODE_INVALID;
-	node->isfresh = node->isvalue = false;
+	node->variety = variety;
+	node->isfresh = false;
 	node->depth = depth;
 	node->nref = 0;
 	node->prev = prev;
+	node->next = NULL;
 	node->forward = NULL;
 	node->backref = NULL;
 	return node;
@@ -49,10 +50,13 @@ static struct node *node_alloc(struct node *prev, int depth, size_t nslots)
 struct node *NodeAbs(struct node *prev, int depth, struct node *body,
 		     size_t nparams, symbol_mt *params)
 {
-	struct node *node = node_alloc(prev, depth, nparams + 1 /* for body */);
-	node->isvalue = true;
-	node->slots[0].variety = SLOT_FUNC;
-	node->slots[0].subst = body;
+	assert(body->variety == NODE_SENTINEL);
+	assert(body->depth == depth + 1);
+
+	struct node *node = node_alloc(NODE_ABS, prev, depth,
+				       nparams + 1 /* for body */);
+	node->slots[SLOT_ABS_BODY].variety = SLOT_BODY;
+	node->slots[SLOT_ABS_BODY].subst = body;
 	for (size_t i = 1; i <= nparams; ++i) {
 		node->slots[i].variety = SLOT_PARAM;
 		node->slots[i].name = params[i-1];
@@ -63,10 +67,13 @@ struct node *NodeAbs(struct node *prev, int depth, struct node *body,
 struct node *NodeAbsCopy(struct node *prev, int depth, struct node *body,
 			 struct node *src)
 {
-	struct node *node = node_alloc(prev, depth, src->nslots);
-	node->isvalue = true;
-	node->slots[0].variety = SLOT_FUNC;
-	node->slots[0].subst = body;
+	assert(src->variety == NODE_ABS || src->variety == NODE_FIX);
+	assert(body->variety == NODE_SENTINEL);
+	assert(body->depth == depth + 1);
+
+	struct node *node = node_alloc(src->variety, prev, depth, src->nslots);
+	node->slots[SLOT_ABS_BODY].variety = SLOT_BODY;
+	node->slots[SLOT_ABS_BODY].subst = body;
 	for (size_t i = 1; i < node->nslots; ++i) {
 		node->slots[i].variety = SLOT_PARAM;
 		node->slots[i].name = src->slots[i].name;
@@ -79,30 +86,40 @@ struct node *NodeAbsCopy(struct node *prev, int depth, struct node *body,
  */
 struct node *NodeApp(struct node *prev, int depth, size_t nargs)
 {
-	return node_alloc(prev, depth, nargs + 1 /* for function */);
+	assert(nargs);		/* sanity check, not a hard constraint */
+	return node_alloc(NODE_APP, prev, depth, nargs + 1 /* for function */);
 }
 
 struct node *NodeBoundVar(struct node *prev, int depth, int up, int across)
 {
-	struct node *node = node_alloc(prev, depth, 1);
+	struct node *node = node_alloc(NODE_VAR, prev, depth, 1);
 	node->slots[0].variety = SLOT_BOUND;
 	node->slots[0].bv.up = up;
 	node->slots[0].bv.across = across;
 	return node;
 }
 
+struct node *NodeCell(struct node *prev, int depth, size_t n)
+{
+	return node_alloc(NODE_CELL, prev, depth, n);
+}
+
 struct node *NodeFreeVar(struct node *prev, int depth, struct term *var)
 {
-	struct node *node = node_alloc(prev, depth, 1);
+	struct node *node = node_alloc(NODE_VAR, prev, depth, 1);
 	node->slots[0].variety = SLOT_FREE;
 	node->slots[0].term = var;
 	return node;
 }
 
+struct node *NodeGeneric(struct node *prev, int depth, size_t nslots)
+{
+	return node_alloc(NODE_INVALID, prev, depth, nslots);
+}
+
 struct node *NodeNum(struct node *prev, int depth, double num)
 {
-	struct node *node = node_alloc(prev, depth, 1);
-	node->isvalue = true;
+	struct node *node = node_alloc(NODE_VAL, prev, depth, 1);
 	node->slots[0].variety = SLOT_NUM;
 	node->slots[0].num = num;
 	return node;
@@ -110,82 +127,103 @@ struct node *NodeNum(struct node *prev, int depth, double num)
 
 struct node *NodePrim(struct node *prev, int depth, unsigned prim)
 {
-	struct node *node = node_alloc(prev, depth, 1);
-	node->isvalue = true;
+	struct node *node = node_alloc(NODE_VAL, prev, depth, 1);
 	node->slots[0].variety = SLOT_PRIM;
 	node->slots[0].prim = prim;
 	return node;
 }
 
-struct node *NodeSubst(struct node *prev, int depth, struct node *subst)
+struct node *NodeSentinel(struct node *next, struct node *prev, int depth)
 {
-	struct node *node = node_alloc(prev, depth, 1);
+	struct node *node = node_alloc(NODE_SENTINEL, prev, depth, 1);
+
+	/* finish connecting to doubly-linked list */
+	node->next = next;
+	next->prev = node;
+	prev->next = node;
+
+	/* a sentinel references the first node in l-to-r order */
 	node->slots[0].variety = SLOT_SUBST;
-	node->slots[0].subst = subst;
+	node->slots[0].subst = next;
+	next->backref = &node->slots[0];
+	next->nref++;
+
 	return node;
 }
 
 struct node *NodeTest(struct node *prev, int depth)
 {
 	/*
-	 * Test nodes have 5 slots but really 3 constituents: the
-	 * predicate, the consequent, and the alternative.  For the
-	 * latter two, we maintain two SUBST slots, one pointing to
-	 * either end of the crumbled (linearized) contents, so that
-	 * we can quickly hook one or the other to the reduction
-	 * environment depending on the test's outcome.
-	 *
-	 * This will have to be updated when we support multiple
-	 * values since both consequent and alternative can be
-	 * multivalued (predicate is always single-valued).
+	 * Test nodes have 3 slots: predicate, consequent, alternative.
+	 * The first is a variable; the other two are subexpressions.
 	 */
-	const size_t nslots = 5;
-	struct node *node = node_alloc(prev, depth, nslots);
-	node->variety = NODE_TEST;
-	for (size_t i = 0; i < nslots; ++i)
-		node->slots[i].variety = SLOT_SUBST;
+	const size_t nslots = 3;
+	struct node *node = node_alloc(NODE_TEST, prev, depth, nslots);
+	node->slots[1].variety = SLOT_BODY;
+	node->slots[2].variety = SLOT_BODY;
 	return node;
 }
 
-void node_free(struct node *node)
+void node_deref(struct node *node)
 {
-	assert(node);
-	if (node_is_abs(node))
-		node_free_env(node_abs_body(node));
-	else if (node->variety == NODE_TEST) {
-		node_free_env(node->slots[2].subst);	/* consequent */
-		node_free_env(node->slots[4].subst);	/* alternative */
+	assert(!node->nref);
+	for (size_t i = 0; i < node->nslots; ++i) {
+		if (node->slots[i].variety == SLOT_SUBST) {
+			assert(node->slots[i].subst->nref > 0);
+			node->slots[i].subst->nref--;
+		}
 	}
-	node_heap_free(node);
 }
 
-void node_free_body(struct node *abs)
+static void node_free_body(struct node *node)
 {
-	assert(node_is_abs(abs));
-	assert(abs->nref == 0);
-	node_free_env(node_abs_body(abs));
-	abs->slots[SLOT_ABS_BODY].subst = NULL;		/* wipe body */
-}
+	assert(node->variety == NODE_SENTINEL);
+	if (node->next == node) return;		/* already pinched */
 
-void node_free_env(struct node *node)
-{
-	while (node) {
-		struct node *tmp = node->prev;
+	/* if the body is intact, first dereference next... */
+	assert(node->nslots);
+	assert(node->slots[0].variety == SLOT_SUBST);
+	assert(node->slots[0].subst == node->next);
+	node->slots[0].subst = NULL, node->next->nref--;
+
+	/* then decrement references as we go */
+	node = node->next;
+	while (!done(node)) {
+		struct node *tmp = node->next;
+		node_deref(node);
 		node_free(node);
 		node = tmp;
 	}
 }
 
-void node_free_shallow(struct node *node)
+void node_free(struct node *node)
 {
-	assert(node);
+	if (!node)
+		return;
+
+	switch (node->variety) {
+	case NODE_SENTINEL:
+		node_free_body(node);
+		break;
+	case NODE_ABS:
+	case NODE_FIX:
+		node_free(node_abs_body(node));
+		break;
+	case NODE_TEST:
+		node_free(node->slots[SLOT_TEST_CSQ].subst);
+		node_free(node->slots[SLOT_TEST_ALT].subst);
+		break;
+	default:
+		/* nada */;
+	}
 	node_heap_free(node);
 }
 
 int node_abs_depth(const struct node *node)
 {
 	int depth;
-	for (depth = 0; node->slots[0].variety == SLOT_SUBST; ++depth)
+	for (depth = 0; node->variety == NODE_VAR &&
+	     node->slots[0].variety == SLOT_SUBST; ++depth)
 		node = node->slots[0].subst;
 	return node_is_abs(node) ? depth : -1;
 }
@@ -197,13 +235,20 @@ const struct node *node_chase_lhs(const struct node *node)
 	return node;
 }
 
-bool node_check_root(const struct node *node)
+void node_insert_after(struct node *node, struct node *dest)
 {
-	assert(node);
-	assert(node->nref == 0);
-	assert(!node->prev);
-	assert(!node->backref);
-	return true;
+	node->prev = dest;
+	node->next = dest->next;
+	node->prev->next = node;
+	node->next->prev = node;
+}
+
+void node_replace(struct node *node, struct node *dest)
+{
+	node->prev = dest->prev;
+	node->next = dest->next;
+	node->prev->next = node;
+	node->next->prev = node;
 }
 
 struct node *node_take_body(struct node *abs)
@@ -215,6 +260,16 @@ struct node *node_take_body(struct node *abs)
 	return body;
 }
 
+void node_wipe_body(struct node *abs)
+{
+	assert(node_is_abs(abs));
+	assert(abs->nref == 0);
+	node_free(node_abs_body(abs));
+	abs->slots[SLOT_ABS_BODY].subst = NULL;		/* wipe body */
+}
+
+static void node_list(const struct node *node, uintptr_t base,
+		      unsigned depth, bool star);
 static void node_list_helper(struct node *node, uintptr_t base, unsigned depth);
 
 static void node_list_addr(const struct node *node, intptr_t base,
@@ -229,8 +284,14 @@ static void node_list_addr(const struct node *node, intptr_t base,
 static void
 node_list_header(const struct node *node, intptr_t base, unsigned depth)
 {
-	assert(node->depth == depth);	/* true, right? */
-	if (node->nref) {
+	assert(depth >= node->depth);	/* we indent non-abstraction depth */
+	/*
+	 * XXX the node->nref test doesn't work for tests since the
+	 * consequent and alternative have nref 0, but we want to print
+	 * their addresses.  Brute forcing it until I have a better
+	 * solution.
+	 */
+	if (1 || node->nref) {
 		unsigned char buf [BASE64_CONVERT_BUFSIZE];
 		node_list_addr(node, base, buf, sizeof buf);
 		printf("%12s: ", buf);
@@ -260,11 +321,11 @@ static void node_list_slot(struct slot slot, intptr_t base)
 				break;
 	case SLOT_NUM:		printf("num[%g]", slot.num);
 				break;
-	case SLOT_PRIM:		printf("prim[%u]", slot.prim);
+	case SLOT_PRIM:		printf("prim[%s]", prim_name(slot.prim));
 				break;
 	case SLOT_SUBST:	node_list_addr(slot.subst, base,
 					       buf, sizeof buf);
-				printf("subst[%s]", buf);
+				printf("^%s", buf);
 				break;
 	default:	panicf("Unhandled slot variety %d\n", slot.variety);
 	}
@@ -273,13 +334,35 @@ static void node_list_slot(struct slot slot, intptr_t base)
 static void
 node_list_contents(const struct node *node, uintptr_t base, unsigned depth)
 {
-	assert(node->depth == depth);	/* true, right? */
+	switch (node->variety) {
+	case NODE_CELL:
+		for (size_t i = 0; i < node->nslots; ++i) {
+			fputs(i == 0 ? "[" : " | ", stdout);
+			node_list_slot(node->slots[i], base);
+		}
+		fputs("]\n", stdout);
+		return;
+	case NODE_TEST:
+		assert(node->nslots == 5);
+		putchar('[');
+		node_list_slot(node->slots[0], base);
+		fputs("? ", stdout);
+		node_list_slot(node->slots[2], base);
+		fputs(" | ", stdout);
+		node_list_slot(node->slots[4], base);
+		fputs("]\n", stdout);
+		return;
+	default:
+		/* fall through... */;
+	}
+
+	assert(depth >= node->depth);	/* we indent non-abstraction depth */
 	if (node_is_abs(node)) {
 		for (size_t i = 1; i < node->nslots; ++i)
 			printf("%s%s", i == 1 ? "<" : ",",
 			       symtab_lookup(node->slots[i].name));
 		fputs(">\n", stdout);
-		/* body may have been wiped with node_free_body() */
+		/* body may have been wiped with node_wipe_body() */
 		if (node_abs_body(node))
 			node_list_helper(node_abs_body(node), base, depth + 1);
 		else
@@ -309,13 +392,13 @@ node_list_contents(const struct node *node, uintptr_t base, unsigned depth)
 static void node_list(const struct node *node, uintptr_t base,
 		      unsigned depth, bool star)
 {
-	assert(node->depth == depth);	/* true, right? */
+	assert(depth >= node->depth);	/* we indent non-abstraction depth */
 	node_list_header(node, base, depth);
 	if (star) {
 		assert(node->nref == 0);
-		printf("*+%d ", node->depth);
+		printf("*+%d\t", node->depth);
 	} else
-		printf("@+%d#%d ", node->depth, node->nref);
+		printf("@+%d#%d\t", node->depth, node->nref);
 	node_list_contents(node, base, depth);
 }
 
@@ -326,7 +409,7 @@ static void node_list(const struct node *node, uintptr_t base,
  */
 static void node_list_helper(struct node *node, uintptr_t base, unsigned depth)
 {
-	assert(node->depth == depth);	/* true, right? */
+	assert(depth >= node->depth);	/* we indent non-abstraction depth */
 	struct node *rev, *tmp;
 	for (rev = NULL; node;
 	     tmp = node->prev, node->prev = rev, rev = node, node = tmp);
@@ -348,22 +431,38 @@ static void node_print_slot(struct slot slot)
 				break;
 	case SLOT_FREE:		term_print(slot.term); break;
 	case SLOT_NUM:		printf("%g", slot.num); break;
-	case SLOT_PRIM:		printf("<%s>", prim_symbol(slot.prim)); break;
+	case SLOT_PRIM:		printf("'%s'", prim_name(slot.prim)); break;
 	case SLOT_SUBST:	printf("^%s", memloc(slot.subst)); break;
 	default:	panicf("Unhandled slot variety %d\n", slot.variety);
 	}
 }
 
+static void node_print_body_contents(const struct node *node)
+{
+	/* body may have been wiped with node_wipe_body() */
+	if (node) {
+		assert(node->variety == NODE_SENTINEL);
+		node_print_body(node);
+	} else
+		fputs("{collected}", stdout);
+}
+
 static void node_print_contents(const struct node *node)
 {
 	switch (node->variety) {
+	case NODE_CELL:
+		for (size_t i = 0; i < node->nslots; ++i) {
+			if (i) fputs(" | ", stdout);
+			node_print_slot(node->slots[i]);
+		}
+		return;
 	case NODE_TEST:
-		assert(node->nslots);
+		assert(node->nslots == 3);
 		node_print_slot(node->slots[0]);	/* predicate */
-		fputs(". ", stdout);
-		node_print_rl(node->slots[2].subst);	/* consequent */
+		fputs("? ", stdout);
+		node_print_body_contents(node->slots[SLOT_TEST_CSQ].subst);
 		fputs(" | ", stdout);
-		node_print_rl(node->slots[4].subst);	/* alternative */
+		node_print_body_contents(node->slots[SLOT_TEST_ALT].subst);
 		return;
 	default:
 		/* fall through... */;
@@ -374,11 +473,7 @@ static void node_print_contents(const struct node *node)
 			printf("%s%s", i == 1 ? "<" : ",",
 			       symtab_lookup(node->slots[i].name));
 		fputs(">.", stdout);
-		/* body may have been wiped with node_free_body() */
-		if (node_abs_body(node))
-			node_print_rl(node_abs_body(node));
-		else
-			fputs("{collected}", stdout);
+		node_print_body_contents(node_abs_body(node));
 		return;
 	}
 
@@ -402,9 +497,9 @@ static void node_print_contents(const struct node *node)
  * '*' position since we flip the direction of 'prev' pointers during
  * reduction and printing, so we have to be told by the caller.
  */
-static void node_print(const struct node *node, bool star)
+static void node_print(const struct node *node)
 {
-	if (star) {
+	if (false /* XXX */) {
 		assert(node->nref == 0);
 		printf("[*+%d ", node->depth);
 	} else
@@ -413,29 +508,28 @@ static void node_print(const struct node *node, bool star)
 	putchar(']');
 }
 
-/*
- * To avoid recursing down a (potentially very long) node list and
- * blowing the stack, we use a pointer-reversing traversal as we do
- * in reduction.  First reverse, then print on the way back.
- */
-void node_print_rl(struct node *node)
+void node_print_body(const struct node *node)
 {
-	struct node *rev, *tmp;
-	for (rev = NULL; node;
-	     tmp = node->prev, node->prev = rev, rev = node, node = tmp);
-	for (bool first = true; rev; first = false,
-	     tmp = rev->prev, rev->prev = node, node = rev, rev = tmp)
-		node_print(rev, first);
-	assert(rev == NULL);
+	assert(node->variety == NODE_SENTINEL);
+	for (node = node->next; !done(node); node = node->next)
+		node_print(node);
 }
 
-/*
- * For printing and validity-checking reasons we need to know if the
- * first node is in '*' position, which is the case iff we're printing
- * a complete environment (e.g at the end of an R-to-L traversal).
- */
-void node_print_lr(const struct node *node, bool complete)
+void node_print_after(const struct node *node)
 {
-	for (/* nada */; node; complete = false, node = node->prev)
-		node_print(node, complete);
+	for (/* nada */; !done(node); node = node->next)
+		node_print(node);
+}
+
+void node_print_until(const struct node *node)
+{
+	/* XXX this is inelegant */
+	if (done(node)) return;
+	const struct node *curr;
+	for (curr = node; !done(curr); curr = curr->prev);
+	assert(curr->variety == NODE_SENTINEL);
+	do {
+		curr = curr->next;
+		node_print(curr);
+	} while (curr != node);
 }

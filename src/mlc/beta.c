@@ -26,6 +26,7 @@
 #include <util/message.h>
 
 #include "beta.h"
+#include "heap.h"	/* XXX awkward */
 #include "node.h"
 
 struct subst {
@@ -34,9 +35,16 @@ struct subst {
 	    shift;		/* amount to shift free variables */
 };
 
-static struct node_chain {
-	struct node *lend, *rend;
-} copy_node_rl(struct node *src, int var, struct subst *subst);
+static struct node_chain
+copy_chain(struct node *src, int var, struct subst *subst);
+
+static struct node *
+copy_body(struct node *src, int var, struct subst *subst)
+{
+	int depth = subst->basedepth + var;
+	struct node_chain chain = copy_chain(src, var, subst);
+	return NodeSentinel(chain.next, chain.prev, depth);
+}
 
 /*
  * By comparing this bound variable's up-value to the current height
@@ -46,9 +54,8 @@ static struct node_chain {
  * free in the original abstraction, or was bound within the original
  * abstraction body.
  */
-static enum slot_variety copy_bv(struct slot *dst,
-				 int up, int across, int height,
-				 const struct subst *subst)
+static struct slot
+copy_bv(int up, int across, int height, const struct subst *subst)
 {
 	if (up == height) {
 		/*
@@ -67,18 +74,20 @@ static enum slot_variety copy_bv(struct slot *dst,
 		 */
 		assert(subst->redex->nslots > across + 1);
 		assert(subst->redex->slots[across+1].variety == SLOT_SUBST);
-		dst->subst = subst->redex->slots[across+1].subst;
-		dst->subst->nref++;
-		return SLOT_SUBST;
+		struct node *ref = subst->redex->slots[across + 1].subst;
+		ref->nref++;
+		return (struct slot) { .variety = SLOT_SUBST, .subst = ref };
 	}
 
 	/*
 	 * Variables originally locally-free get shifted as they get
 	 * pulled deeper, while locally-bound variables stay as-is.
 	 */
-	dst->bv.up = up + (up > height ? subst->shift : 0);
-	dst->bv.across = across;
-	return SLOT_BOUND;
+	return (struct slot) {
+		.variety = SLOT_BOUND,
+		.bv.up = up + (up > height ? subst->shift : 0),
+		.bv.across = across,
+	};
 }
 
 static unsigned copy_subst(struct slot *copy, const struct slot src)
@@ -115,17 +124,22 @@ static unsigned copy_subst(struct slot *copy, const struct slot src)
 	return SLOT_SUBST;
 }
 
-static struct node *copy_app(struct node *copy, const struct node *src,
-			     int var, struct subst *subst)
+static struct node *copy_slots(struct node *copy, const struct node *src,
+			       int var, struct subst *subst)
 {
 	assert(copy->nslots == src->nslots);
 	for (size_t i = copy->nslots; i--; /* nada */) {
 		enum slot_variety variety = src->slots[i].variety;
 		switch (variety) {
+		case SLOT_BODY:
+			copy->slots[i].variety = SLOT_BODY;
+			copy->slots[i].subst =
+				copy_body(src->slots[i].subst, var, subst);
+			break;
 		case SLOT_BOUND:
-			copy->slots[i].variety = copy_bv(&copy->slots[i],
-				src->slots[i].bv.up, src->slots[i].bv.across,
-				var, subst);
+			copy->slots[i] = copy_bv(src->slots[i].bv.up,
+						 src->slots[i].bv.across,
+						 var, subst);
 			break;
 		case SLOT_FREE:
 		case SLOT_NUM:
@@ -143,28 +157,6 @@ static struct node *copy_app(struct node *copy, const struct node *src,
 	return copy;
 }
 
-static struct node *copy_test(struct node *copy, const struct node *src,
-			     int var, struct subst *subst)
-{
-	assert(src->variety == NODE_TEST);
-	assert(src->nslots == 5);
-	assert(copy->nslots == src->nslots);
-	copy_subst(&copy->slots[0], src->slots[0]);	/* predicate */
-
-	/*
-	 * XXX do I need to invoke the machinery in copy_subst for these?
-	 */
-	struct node_chain chain;
-	chain = copy_node_rl(src->slots[2].subst, var, subst); /* consequent */
-	copy->slots[1].subst = chain.lend;
-	copy->slots[2].subst = chain.rend;
-	chain = copy_node_rl(src->slots[4].subst, var, subst); /* alternative */
-	copy->slots[3].subst = chain.lend;
-	copy->slots[4].subst = chain.rend;
-
-	return copy;
-}
-
 /*
  * Copy a node.  For abstractions, increment 'var' since we're descending
  * into an abstraction, therefore there's one more layer of abstraction
@@ -175,19 +167,28 @@ static struct node *copy_node(struct node *prev, struct node *src,
 {
 	int depth = subst->basedepth + var;
 	switch (src->variety) {
-	case NODE_TEST:
-		return copy_test(NodeTest(prev, depth), src, var, subst);
-	default:
-		/* fall through... */
+	case NODE_ABS: case NODE_FIX: {
+		struct node_chain chain =
+			copy_chain(node_abs_body(src), var + 1, subst);
+		assert(chain.next->depth == depth + 1);
+		assert(chain.prev->depth == depth + 1);
+		return NodeAbsCopy(prev, depth,
+			NodeSentinel(chain.next, chain.prev, depth + 1),
+			src);
 	}
-
-	return node_is_abs(src) ?
-		NodeAbsCopy(
-			prev, depth,
-			copy_node_rl(node_abs_body(src), var + 1, subst).rend,
-			src) :
-		copy_app(NodeApp(prev, depth, node_app_nargs(src)),
-			 src, var, subst);
+	case NODE_APP:
+	case NODE_CELL:
+	case NODE_TEST:
+	case NODE_VAL:
+	case NODE_VAR: {
+		struct node *dst = NodeGeneric(prev, depth, src->nslots);
+		copy_slots(dst, src, var, subst);
+		dst->variety = src->variety;
+		return dst;
+	}
+	default:
+		panicf("Unhandled node variety %d\n", src->variety);
+	}
 }
 
 /*
@@ -213,65 +214,79 @@ static struct node *copy_node(struct node *prev, struct node *src,
  *                         +-----+  +-----+
  *
  * Copying an abstraction node recursively copies its body.  That's a
- * completely separate sub-invocation of copy_node_rl which doesn't
+ * completely separate sub-invocation of copy_chain which doesn't
  * interfere with this one.
  */
 static struct node_chain
-copy_node_rl(struct node *src, int var, struct subst *subst)
+copy_chain(struct node *src, int var, struct subst *subst)
 {
 	struct node *copy, *curr, *tmp;
 
+	assert(src);
+	assert(src->variety == NODE_SENTINEL);
+
 	/* perform copies r-to-l, linking copies l-to-r */
-	for (curr = src, copy = NULL; curr; curr = curr->prev) {
-		assert(curr->nref == 1 || !curr->prev);
+	for (curr = src->prev, copy = NULL; !done(curr); curr = curr->prev) {
+		assert(curr->nref == 1);
 		copy = copy_node(copy, curr, var, subst);
 		assert(!curr->forward);
 		curr->forward = copy;
+		copy->next = copy->prev;	/* correct order */
 	}
+	assert(curr == src);
 
 	/* clear forwarding pointers in originals */
-	for (curr = src; curr; curr = curr->prev) {
+	for (curr = src->prev; !done(curr); curr = curr->prev) {
 		/*
 		 * Having completed the recursive copy, we should see that
-		 * the copies and sources have matching reference counts.
+		 * the copies and sources have matching reference counts--
+		 * which should all be 1 since we haven't reduced yet.
+		 * The exception is the last (leftmost) copy, which isn't
+		 * hooked to a sentinel so has 0 references.
 		 */
 		assert(curr->forward);
-		assert(curr->nref == curr->forward->nref);
+		if (curr->forward->nref == 0) {
+			assert(curr->prev->variety == NODE_SENTINEL);
+		} else {
+			assert(curr->forward->nref == 1);
+			assert(curr->forward->nref == curr->nref);
+		}
 		curr->forward = NULL;
 	}
+	assert(curr == src);
 
 	/* reverse copies to put them in correct order */
-	struct node_chain chain = { .lend = copy };
+	struct node_chain chain = { .next = copy };
 	while (copy)
 		tmp = copy->prev, copy->prev = curr, curr = copy, copy = tmp;
-	chain.rend = curr;
+	chain.prev = curr;
 	return chain;
 }
 
 /*
- * Connect the left-hand end of the reduct chain (the 'star' at the top
- * level of the reduced term) to the redex's referent.  Necessary since
- * the redex itself is disappearing--it should be replaced with the
- * reduct.  This includes updating the redex's parent pointer (backref)
- * if it exists.
+ * Replace the redex (which is disappearing) with the chain resulting
+ * from substitution.  Update references and list structure as needed.
  */
 static void
-replace_redex(struct node *redex, struct node *lend)
+replace_redex(struct node *redex, struct node *next, struct node *prev)
 {
-	assert(node_check_root(lend));
-	assert(lend->depth == redex->depth);
-	if (redex->backref) {
-		lend->backref = redex->backref;
-		lend->backref->subst = lend;
-	}
-	lend->nref = redex->nref;
-	lend->prev = redex->prev;
-	if (redex->prev) {
-		assert(redex->nref);
-		assert(redex->backref);
-		redex->nref--;
-	}
-	assert(redex->nref == 0);
+	/* depths */
+	assert(next->depth == redex->depth);
+	assert(prev->depth == redex->depth);
+
+	/* backref and references */
+	assert(redex->backref);
+	next->backref = redex->backref;
+	next->backref->subst = next;
+	assert(redex->nref == 1);
+	next->nref = redex->nref;
+	redex->nref--;
+
+	/* linked-list structure */
+	next->prev = redex->prev;
+	prev->next = redex->next;
+	next->prev->next = next;
+	prev->next->prev = prev;
 }
 
 struct node *beta_reduce(struct node *redex, struct node *body,
@@ -284,9 +299,24 @@ struct node *beta_reduce(struct node *redex, struct node *body,
 		.basedepth = depth,
 		.shift = delta - 1,	/* extra -1 for abstraction elim */
 	};
-	struct node_chain chain = copy_node_rl(body, 0, &subst);
-	replace_redex(redex, chain.lend);
-	return chain.rend;
+	assert(body->variety == NODE_SENTINEL);
+	struct node_chain chain = copy_chain(body, 0, &subst);
+	replace_redex(redex, chain.next, chain.prev);
+	return chain.prev;
+}
+
+static void subst_node(struct node *src, int var, struct subst *subst);
+
+void subst_body(struct node *src, int var, struct subst *subst)
+{
+	assert(src);
+	assert(src->variety == NODE_SENTINEL);
+	src->depth = subst->basedepth + var;	/* update sentinel depth */
+	for (struct node *curr = src->prev; !done(curr); curr = curr->prev) {
+		assert(curr->nref == 1);
+		subst_node(curr, var, subst);
+		assert(curr->depth == src->depth);
+	}
 }
 
 /*
@@ -299,35 +329,22 @@ struct node *beta_reduce(struct node *redex, struct node *body,
  *
  * The copy_bv() function defined above suffices for this... we don't
  * need to create an alternative subst_bv().
+ *
+ * We also have to descend into bodies... but don't handle abstraction
+ * bodies here as those require a 'var' (abstraction-depth) adjustment.
  */
 static void subst_inert(struct node *src, int var, struct subst *subst)
 {
 	for (size_t i = src->nslots; i--; /* nada */) {
 		struct slot *slot = &src->slots[i];
-		if (slot->variety != SLOT_BOUND)
-			continue;
-		enum slot_variety v =
-			copy_bv(slot, slot->bv.up, slot->bv.across, var, subst);
-		assert(v == SLOT_BOUND || v == SLOT_SUBST);
-		slot->variety = v;
+		if (slot->variety == SLOT_BODY) {
+			assert(!node_is_abs(src));
+			subst_body(slot->subst, var, subst);
+		} else if (slot->variety == SLOT_BOUND) {
+			src->slots[i] = copy_bv(slot->bv.up, slot->bv.across,
+						var, subst);
+		}
 	}
-}
-
-static struct node_chain
-subst_node_rl(struct node *src, int var, struct subst *subst);
-
-/*
- * The predicate in slots[0] of a test is guaranteed to be a SUBST,
- * so there's nothing to do for that slot here.  We do, however, have
- * to recursively substitute in both consequent and alternative.
- */
-static void subst_test(struct node *src, int var, struct subst *subst)
-{
-	assert(src->nslots == 5);
-	assert(src->slots[2].variety == SLOT_SUBST);
-	subst_node_rl(src->slots[2].subst, var, subst);
-	assert(src->slots[4].variety == SLOT_SUBST);
-	subst_node_rl(src->slots[4].subst, var, subst);
 }
 
 /*
@@ -347,24 +364,16 @@ static void subst_node(struct node *src, int var, struct subst *subst)
 		 * abstraction, therefore there is one more layer of
 		 * abstraction depth to reach var's binder.
 		 */
-		subst_node_rl(node_abs_body(src), var + 1, subst);
-	else if (src->variety == NODE_TEST)
-		subst_test(src, var, subst);
+		subst_body(node_abs_body(src), var + 1, subst);
 	else
 		subst_inert(src, var, subst);
 }
 
-static struct node_chain
-subst_node_rl(struct node *src, int var, struct subst *subst)
-{
-	struct node *curr, *prior;
-	for (curr = src, prior = NULL; curr; prior = curr, curr = curr->prev) {
-		assert(curr->nref == 1 || !curr->prev);
-		subst_node(curr, var, subst);
-	}
-	return (struct node_chain) { .lend = prior, .rend = src };
-}
-
+/*
+ * A subtle point... reduce() will free the redex, and we don't want
+ * to free the body since it's put into use (spliced into the evaluation
+ * chain), but the *sentinel* for the body is no longer in use; free that.
+ */
 struct node *beta_nocopy(struct node *redex, struct node *body,
 			 int depth, int delta)
 {
@@ -375,7 +384,10 @@ struct node *beta_nocopy(struct node *redex, struct node *body,
 		.basedepth = depth,
 		.shift = delta - 1,	/* extra -1 for abstraction elim */
 	};
-	struct node_chain chain = subst_node_rl(body, 0, &subst);
-	replace_redex(redex, chain.lend);
-	return chain.rend;
+	assert(body->variety == NODE_SENTINEL);
+	subst_body(body, 0, &subst);
+	replace_redex(redex, body->next, body->prev);
+	struct node *tmp = body->prev;
+	node_heap_free(body);
+	return tmp;
 }

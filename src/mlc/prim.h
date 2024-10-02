@@ -22,21 +22,24 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
+#include <stdbool.h>
+
 enum prim_variety {
 	PRIM_INVALID,
-	PRIM_ADD,
-	PRIM_SUB,
-	PRIM_MULT,
-	PRIM_DIV,
+	PRIM_ADD, PRIM_SUB,
+	PRIM_MULT, PRIM_DIV,
 	PRIM_EQ, PRIM_NE,
 	PRIM_LT, PRIM_LTE,
 	PRIM_GT, PRIM_GTE,
+	PRIM_CAR, PRIM_CDR,
+	PRIM_ISNIL, PRIM_ISPAIR,
 } __attribute__ ((packed));
 
-extern const char *prim_symbol(enum prim_variety variety);
+extern const char *prim_name(enum prim_variety variety);
 
 struct node;
 
-extern struct node *prim_reduce(struct node *redex, int depth);
+extern bool prim_reducible(struct node *redex);
+extern struct node *prim_reduce(struct node *redex);
 
 #endif /* LARK_MLC_PRIM_H */

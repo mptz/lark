@@ -1,19 +1,19 @@
 form: div (six, three)
-norm: [f? [x? x; f; f]]
+norm: [f. [x. x; f; f]]
 read: 2
 ======================================================================
 form: mod (seven, four)
-norm: [f? [x? x; f; f; f]]
+norm: [f. [x. x; f; f; f]]
 read: 3
 ======================================================================
 form: divmod (five, two)
-norm: [f? [fA? [x? x; fA]]; f ([fB? [x? x; fB; fB]])]
+norm: [[f. [x. x; f; f]] | [f. [x. x; f]]]
 ======================================================================
-form: divmod (ten, three); car
-norm: [f? [x? x; f; f; f]]
+form: #0 divmod (ten, three)
+norm: [f. [x. x; f; f; f]]
 read: 3
 ======================================================================
-form: divmod (nine, four); cdr
-norm: [f? [x? x; f]]
+form: #1 divmod (nine, four)
+norm: [f. [x. x; f]]
 read: 1
 ======================================================================

@@ -39,7 +39,9 @@ enum term_variety {
 	TERM_BOUND_VAR,		/* i.e. local variable */
 	TERM_FREE_VAR,		/* i.e. global variable */
 	TERM_FIX,		/* recursive abstraction */
+	TERM_NIL,
 	TERM_NUM,
+	TERM_PAIR,
 	TERM_PRIM,
 	TERM_TEST,
 } __attribute__ ((packed));
@@ -54,6 +56,7 @@ struct term {
 			 size_t nargs; struct term **args; } app;
 		struct { int up, across; symbol_mt name; } bv;
 		struct { symbol_mt name; } fv;
+		struct { struct term *car, *cdr; } pair;
 		struct { size_t ncsqs, nalts;
 			 struct term *pred, **csqs, **alts; } test;
 		double num;
@@ -68,6 +71,8 @@ extern struct term *TermBoundVar(int up, int across, symbol_mt name);
 extern struct term *TermFix(size_t nformals, symbol_mt *formals,
 			    size_t nbodies, struct term **bodies);
 extern struct term *TermFreeVar(symbol_mt name);
+extern struct term *TermNil(void);
+extern struct term *TermPair(struct term *car, struct term *cdr);
 extern struct term *TermPrim(unsigned prim);
 extern struct term *TermNum(double num);
 extern struct term *TermTest(struct term *pred,

@@ -1,4 +1,6 @@
-id (three)
+#include "church.mlc"
+
+id (3)
 id (id)
 id (apple)
 and (true, true)

@@ -16,11 +16,6 @@ Indented & more-readable node listings.
 Atomic numbers and arithmetic operations on them.
 Native numeric test operations.
 
-TODO List
----------
-Listing (vs printing) of test nodes.
-Tests of primitive and primitives-in-tests.
-
 What's Coming
 -------------
 Native recursion.

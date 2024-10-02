@@ -1,18 +1,18 @@
 Testing closed triples
 form: triple; trip1
-norm: [f? [x? x; f; f; f; f; f; f; f; f]]
+norm: [f. [x. x; f; f; f; f; f; f; f; f]]
 read: 8
 ======================================================================
 form: triple; trip2; car
-norm: [f? [x? x; f; f; f; f; f]]
+norm: [f. [x. x; f; f; f; f; f]]
 read: 5
 ======================================================================
 form: triple; trip2; cdr
-norm: [f? [x? x; f; f]]
+norm: [f. [x. x; f; f]]
 read: 2
 ======================================================================
 form: triple; trip3
-norm: [f? [x? x; f; f; f]]
+norm: [f. [x. x; f; f; f]]
 read: 3
 ======================================================================
 Testing open triples

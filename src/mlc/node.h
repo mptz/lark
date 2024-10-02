@@ -28,12 +28,15 @@
 
 #define SLOT_ABS_BODY 0
 #define SLOT_APP_FUNC 0
+#define SLOT_TEST_PRED 0
+#define SLOT_TEST_CSQ 1
+#define SLOT_TEST_ALT 2
 
 enum slot_variety {
 	SLOT_INVALID,
+	SLOT_BODY,	/* subexpression e.g. function body */
 	SLOT_BOUND,
 	SLOT_FREE,
-	SLOT_FUNC,	/* function body for abstraction */
 	SLOT_NULL,	/* placeholder for missing value */
 	SLOT_NUM,
 	SLOT_PARAM,	/* formal parameter to abstraction */
@@ -72,7 +75,14 @@ static inline bool slot_is_ref(const struct slot slot)
  */
 enum node_variety {
 	NODE_INVALID,
+	NODE_SENTINEL,
+	NODE_ABS,
+	NODE_APP,
+	NODE_CELL,
+	NODE_FIX,
 	NODE_TEST,
+	NODE_VAL,
+	NODE_VAR,
 } __attribute__ ((packed));
 
 /*
@@ -83,7 +93,7 @@ enum node_variety {
  * by the types of slot they contain:
  *
  * An *abstraction* node contains:
- *	slots[0]	SLOT_FUNC	function body
+ *	slots[0]	SLOT_BODY	function body
  *	slots[1]	SLOT_SELF	self-reference parameter OR
  *			SLOT_NULL	nothing (non-recursive)
  *	slots[2..]	SLOT_PARAM	ordinary abstraction parameters
@@ -100,12 +110,11 @@ enum node_variety {
  */
 struct node {
 	enum node_variety variety;
-	bool isfresh,		/* freshly allocated subst? (not a copy) */
-	     isvalue;		/* a value? (abstraction or atom) */
+	bool isfresh;		/* freshly allocated subst? (not a copy) */
 	int depth,		/* abstraction depth */
 	    nref;		/* reference count for gc */
 	size_t nslots;		/* slot count for this node */
-	struct node *prev;	/* previous (or next when reversing) */
+	struct node *prev, *next;	/* for doubly-linked node chains */
 	union {
 		struct node *forward,	/* forwarding pointer during copy */
 			    *outer;	/* enclosing environment during
@@ -115,18 +124,24 @@ struct node {
 	struct slot slots[];
 };
 
+struct node_chain {
+	struct node *next, *prev;
+};
+
 static inline bool node_is_abs(const struct node *node)
-	{ return node->slots[0].variety == SLOT_FUNC; }
+	{ return node->variety == NODE_ABS || node->variety == NODE_FIX; }
 static inline bool node_is_prim(const struct node *node)
 	{ return node->slots[0].variety == SLOT_PRIM; }
 static inline struct node *node_abs_body(const struct node *abs)
-	{ return abs->slots[0].subst; }
-/* XXX this keeps getting messier. Overhaul coming */
-static inline bool node_is_app(const struct node *node)
-	{ return !node->isvalue && (node->nslots > 1) &&
-		 node->variety != NODE_TEST; }
+	{ return abs->slots[SLOT_ABS_BODY].subst; }
 static inline size_t node_app_nargs(const struct node *app)
 	{ return app->nslots - 1; }
+static inline bool done(const struct node *node)
+	{ return node->variety == NODE_SENTINEL; }
+static inline void node_pinch(struct node *node)
+	{ node->prev = node->next = node; }
+static inline void node_remove(struct node *node)
+	{ node->prev->next = node->next; node->next->prev = node->prev; }
 
 struct node *NodeAbs(struct node *prev, int depth, struct node *body,
 		     size_t nparams, symbol_mt *params);
@@ -134,23 +149,27 @@ struct node *NodeAbsCopy(struct node *prev, int depth, struct node *body,
 			 struct node *src);	/* src for params only */
 struct node *NodeApp(struct node *prev, int depth, size_t nargs);
 struct node *NodeBoundVar(struct node *prev, int depth, int up, int across);
+struct node *NodeCell(struct node *prev, int depth, size_t n);
 struct node *NodeFreeVar(struct node *prev, int depth, struct term *var);
+struct node *NodeGeneric(struct node *prev, int depth, size_t nslots);
 struct node *NodeNum(struct node *prev, int depth, double num);
 struct node *NodePrim(struct node *prev, int depth, unsigned prim);
-struct node *NodeSubst(struct node *prev, int depth, struct node *subst);
+struct node *NodeSentinel(struct node *next, struct node *prev, int depth);
 struct node *NodeTest(struct node *prev, int depth);
 
 extern int node_abs_depth(const struct node *node);
 extern const struct node *node_chase_lhs(const struct node *node);
-extern bool node_check_root(const struct node *node);
+extern void node_deref(struct node *node);
 extern void node_free(struct node *node);
-extern void node_free_body(struct node *abs);
-extern void node_free_env(struct node *node);
-extern void node_free_shallow(struct node *node);
-	/* {list,print}_rl are non-const b/c ptr reversing */
+extern void node_insert_after(struct node *node, struct node *dest);
+extern void node_replace(struct node *node, struct node *dest);
+extern void node_wipe_body(struct node *abs);
+
+	/* XXX {list,print}_rl are non-const b/c ptr reversing */
 extern void node_list_rl(struct node *node);
-extern void node_print_rl(struct node *node);
-extern void node_print_lr(const struct node *node, bool complete);
+extern void node_print_body(const struct node *node);
+extern void node_print_after(const struct node *node);
+extern void node_print_until(const struct node *node);
 extern struct node *node_take_body(struct node *abs);
 
 #endif /* LARK_MLC_NODE_H */
