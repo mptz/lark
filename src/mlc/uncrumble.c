@@ -21,6 +21,7 @@
  */
 
 #include <assert.h>
+#include <stdlib.h>
 
 #include <util/memutil.h>
 #include <util/message.h>
@@ -71,8 +72,8 @@ static symbol_mt name_lookup(int up, int across, const struct context *context)
 	for (assert(up >= 0); up--; assert(context))
 		context = context->outer;
 	assert(node_is_abs(context->abs));
-	assert(context->abs->slots[across+1].variety == SLOT_PARAM ||
-	       context->abs->slots[across+1].variety == SLOT_SELF);
+	/* the +1 skips over the function body */
+	assert(slot_is_name(context->abs->slots[across+1]));
 	return context->abs->slots[across+1].name;
 }
 
@@ -97,15 +98,52 @@ static int shift_index(int index, const struct shift *shift)
 static struct term *uncrumble_node(const struct node *node, int cutoff,
 				   const struct context *context,
 				   struct shift *shift);
-static struct term *uncrumble_rl(const struct node *node, int cutoff,
-				 const struct context *context,
-				 struct shift *shift);
+
+static struct term *uncrumble_body(const struct node *node, int cutoff,
+				   const struct context *context,
+				   struct shift *shift)
+{
+	assert(node->variety == NODE_SENTINEL);
+	return uncrumble_node(node->next, cutoff, context, shift);
+}
+
+static struct term *uncrumble_abs(const struct node *node, int cutoff,
+				  const struct context *context,
+				  struct shift *shift)
+{
+	assert(node_is_abs(node));
+	assert(node->nslots);
+
+	struct node *body = node_abs_body(node);
+	assert(body->variety == NODE_SENTINEL);
+	assert(body->depth == node->depth + 1);
+	size_t nformals = node->nslots - 1;	/* omit body */
+	assert(nformals);
+	symbol_mt *formals = xmalloc(sizeof *formals * nformals);
+	for (size_t i = 0; i < nformals; ++i) {
+		assert(slot_is_name(node->slots[i+1]));
+		formals[i] = node->slots[i+1].name;
+	}
+	struct context scope = {
+		.outer = context, 
+		.abs = node,
+	};
+
+	/* node can only have one body for now */
+	struct term **bodies = xmalloc(sizeof *bodies);
+	bodies[0] = uncrumble_body(body, cutoff + 1, &scope, shift);
+	return node->slots[1].variety == SLOT_SELF ?
+		TermFix(nformals, formals, 1, bodies) :
+		TermAbs(nformals, formals, 1, bodies);
+}
 
 static struct term *uncrumble_slot(struct slot slot, int depth, int cutoff,
 				   const struct context *context,
 				   struct shift *shift)
 {
 	switch (slot.variety) {
+	case SLOT_BODY:
+		return uncrumble_body(slot.subst, cutoff, context, shift);
 	case SLOT_BOUND: {
 		shift->cutoff = cutoff;
 		int shifted = shift_index(slot.bv.up, shift);
@@ -137,46 +175,6 @@ static struct term *uncrumble_slot(struct slot slot, int depth, int cutoff,
 	return uncrumble_node(target, cutoff, context, shift);
 }
 
-static struct term *uncrumble_value(const struct node *node, int cutoff,
-				    const struct context *context,
-				    struct shift *shift)
-{
-	assert(node->nslots);
-	switch (node->slots[0].variety) {
-	case SLOT_BODY: {
-		struct node *body = node_abs_body(node);
-		assert(body->variety == NODE_SENTINEL);
-		assert(body->depth == node->depth + 1);
-		size_t nformals = node->nslots - 1;	/* omit body */
-		assert(nformals);
-		symbol_mt *formals = xmalloc(sizeof *formals * nformals);
-		for (size_t i = 0; i < nformals; ++i) {
-			assert(node->slots[i+1].variety == SLOT_PARAM ||
-			       node->slots[i+1].variety == SLOT_SELF);
-			formals[i] = node->slots[i+1].name;
-		}
-		struct context scope = {
-			.outer = context, 
-			.abs = node,
-		};
-		/* node can only have one body for now */
-		struct term **bodies = xmalloc(sizeof *bodies);
-		bodies[0] = uncrumble_rl(body->prev, cutoff + 1, &scope, shift);
-		return node->slots[1].variety == SLOT_SELF ?
-			TermFix(nformals, formals, 1, bodies) :
-			TermAbs(nformals, formals, 1, bodies);
-	}
-	case SLOT_NUM:
-		assert(node->nslots == 1);
-		return TermNum(node->slots[0].num);
-	case SLOT_PRIM:
-		assert(node->nslots == 1);
-		return TermPrim(node->slots[0].prim);
-	default:
-		panicf("Unhandled slot variety %d\n", node->slots[0].variety);
-	}
-}
-
 static struct term *uncrumble_node(const struct node *node, int cutoff,
 				   const struct context *context,
 				   struct shift *shift)
@@ -185,60 +183,65 @@ static struct term *uncrumble_node(const struct node *node, int cutoff,
 	switch (node->variety) {
 	case NODE_ABS:
 	case NODE_FIX:
-	case NODE_VAL:
-		return uncrumble_value(node, cutoff, context, shift);
-	case NODE_CELL:
-		assert(node->nslots == 0 || node->nslots == 2);	/* nil/pair */
-		return	node->nslots == 0 ? TermNil() :
-			TermPair(uncrumble_slot(node->slots[0], node->depth,
-						cutoff, context, shift),
-				 uncrumble_slot(node->slots[1], node->depth,
-						cutoff, context, shift));
-	case NODE_TEST: {
-		struct term **csqs = xmalloc(sizeof *csqs),
-			    **alts = xmalloc(sizeof *alts);
-		csqs[0] = uncrumble_rl(node->slots[1].subst->prev, cutoff,
-				       context, shift);
-		alts[0] = uncrumble_rl(node->slots[2].subst->prev, cutoff,
-				       context, shift);
-		return TermTest(uncrumble_slot(node->slots[0], node->depth,
-					       cutoff, context, shift),
-				1, csqs, 1, alts);
-	}
+		return uncrumble_abs(node, cutoff, context, shift);
 	case NODE_APP:
+	case NODE_CELL:
+	case NODE_TEST:
+	case NODE_VAL:
 	case NODE_VAR:
 		break;
 	default:
 		panicf("Unhandled node variety %d\n", node->variety);
 	}
 
-	struct term *lhs, **args;
-	lhs = uncrumble_slot(node->slots[0], node->depth, cutoff,
-			     context, shift);
-	if (node->nslots == 1)
-		return lhs;
+	/*
+	 * Handle nodes whose slots can be handled uniformly.  Convert
+	 * those slots to subterms, then assemble them into terms below.
+	 */
+	struct term **slotvals = xmalloc(sizeof *slotvals * node->nslots);
+	for (size_t i = 0; i < node->nslots; ++i)
+		slotvals[i] = uncrumble_slot(node->slots[i], node->depth,
+					     cutoff, context, shift);
 
-	/* an application */
-	assert(node->variety == NODE_APP);
-	size_t nargs = node->nslots - 1;
-	args = xmalloc(sizeof *args * nargs);
-	for (size_t i = 0; i < nargs; ++i)
-		args[i] = uncrumble_slot(node->slots[i+1], node->depth,
-					 cutoff, context, shift);
-	return TermApp(lhs, nargs, args);
-}
-
-static struct term *uncrumble_rl(const struct node *node, int cutoff,
-				 const struct context *context,
-				 struct shift *shift)
-{
-	while (node->prev && node->prev->variety != NODE_SENTINEL) node = node->prev;
-	return uncrumble_node(node, cutoff, context, shift);
+	struct term *retval = NULL;
+	switch (node->variety) {
+	case NODE_APP: {
+		assert(node->nslots > 1);
+		size_t nargs = node->nslots - 1;
+		struct term **args = xmalloc(sizeof *args * nargs);
+		for (size_t i = 0; i < nargs; ++i)
+			args[i] = slotvals[i+1];
+		retval = TermApp(slotvals[0], nargs, args);
+		break;
+	}
+	case NODE_CELL:
+		assert(node->nslots == 0 || node->nslots == 2);	/* nil/pair */
+		retval = node->nslots == 0 ? TermNil() :
+			TermPair(slotvals[0], slotvals[1]);
+		break;
+	case NODE_TEST: {
+		struct term **csqs = xmalloc(sizeof *csqs),
+			    **alts = xmalloc(sizeof *alts);
+		csqs[0] = slotvals[1];
+		alts[0] = slotvals[2];
+		retval = TermTest(slotvals[0], 1, csqs, 1, alts);
+		break;
+	}
+	case NODE_VAL:
+	case NODE_VAR:
+		assert(node->nslots == 1);
+		retval = slotvals[0];
+		break;
+	default:
+		panicf("Unhandled node variety %d\n", node->variety);
+	}
+	free(slotvals);
+	return retval;
 }
 
 struct term *uncrumble(const struct node *node)
 {
 	assert(node->depth == 0);
 	struct shift shift = { .prev = NULL, .delta = 0, .cutoff = 0 };
-	return uncrumble_rl(node, 0, NULL, &shift);
+	return uncrumble_body(node, 0, NULL, &shift);
 }

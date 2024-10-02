@@ -43,6 +43,10 @@ const char *prim_name(enum prim_variety variety)
 	case PRIM_GTE:		return ">=";
 	case PRIM_CAR:		return "#0";
 	case PRIM_CDR:		return "#1";
+	case PRIM_AND:		return "#and";
+	case PRIM_OR:		return "#or";
+	case PRIM_XOR:		return "#xor";
+	case PRIM_NOT:		return "#not";
 	case PRIM_ISNIL:	return "#is-nil";
 	case PRIM_ISPAIR:	return "#is-pair";
 	default: panicf("Unhandled primitive variety %d\n", variety);
@@ -52,15 +56,8 @@ const char *prim_name(enum prim_variety variety)
 static struct node *
 prim_reduce_binary(struct node *redex, enum prim_variety variety)
 {
-	/*
-	 * The redex is confirmed reducible; we need to allocate a new
-	 * node to take its place.  Decrement reference counts of all
-	 * three redex components since we're using them up.
-	 */
-	struct node *num1 = redex->slots[1].subst,
-		    *num2 = redex->slots[2].subst;
-	double lhs = num1->slots[0].num,
-	       rhs = num2->slots[0].num,
+	double lhs = redex->slots[1].subst->slots[0].num,
+	       rhs = redex->slots[2].subst->slots[0].num,
 	       val;
 	switch (variety) {
 	case PRIM_ADD:	val = lhs + rhs; break;
@@ -73,54 +70,36 @@ prim_reduce_binary(struct node *redex, enum prim_variety variety)
 	case PRIM_LTE:	val = lhs <= rhs; break;
 	case PRIM_GT:	val = lhs >  rhs; break;
 	case PRIM_GTE:	val = lhs >= rhs; break;
+	case PRIM_AND:	val = lhs && rhs; break;
+	case PRIM_OR:	val = lhs || rhs; break;
+	case PRIM_XOR:	val = !(!lhs ^ !rhs); break;
 	default: panicf("Unhandled primitive variety %d\n", variety);
 	}
 
-	struct node *num = NodeNum(redex->prev, redex->depth, val);
-
-	/*
-	 * Replace the redex with the freshly allocated number.
-	 * XXX we could overwrite the redex as we do elsewhere.
-	 */
 	assert(redex->nref == 1);
 	assert(redex->backref);
-	num->backref = redex->backref;
-	num->backref->subst = num;
-	redex->nref--, num->nref++;
-	node_replace(num, redex);
-	assert(!redex->nref);
-	node_deref(redex);
-	node_free(redex);
-	return num->prev;
+	assert(redex->variety == NODE_APP);
+	assert(redex->nslots == 3);
+	node_recycle(redex);
+	redex->slots[0].variety = SLOT_NUM;
+	redex->slots[0].num = val;
+	redex->variety = NODE_VAL;
+	redex->nslots = 1;
+	return redex;
 }
 
 static struct node *
 prim_reduce_unary(struct node *redex, enum prim_variety variety)
 {
-	/*
-	 * Example node interreferences for #is-pair (q)
-	 *
-	 * ... [@A ^R] ... [@R ^O ^Q] <-headl
-	 *
-	 * 	headr -> [@O #is-pair][@Q ... ]...
-	 */
-	struct node *op = redex->slots[0].subst,
-		    *arg = redex->slots[1].subst;
-	op->nref--;			/* deref operator (@O above) */
-	assert(op->nref >= 0);
-	arg->nref--;			/* deref argument (@Q above) */
-	assert(arg->nref >= 0);
+	struct node *arg = redex->slots[1].subst;
+	double val;
 
 	switch (variety) {
 	case PRIM_ISNIL:
-		redex->slots[0].variety = SLOT_NUM;
-		redex->slots[0].num =
-			(arg->variety == NODE_CELL && arg->nslots == 0);
+		val = (arg->variety == NODE_CELL && arg->nslots == 0);
 		break;
 	case PRIM_ISPAIR:
-		redex->slots[0].variety = SLOT_NUM;
-		redex->slots[0].num =
-			(arg->variety == NODE_CELL && arg->nslots == 2);
+		val = (arg->variety == NODE_CELL && arg->nslots == 2);
 		break;
 	default:
 		panicf("Unhandled primitive variety %d\n", variety);
@@ -130,6 +109,9 @@ prim_reduce_unary(struct node *redex, enum prim_variety variety)
 	assert(redex->backref);
 	assert(redex->variety == NODE_APP);
 	assert(redex->nslots == 2);
+	node_recycle(redex);
+	redex->slots[0].variety = SLOT_NUM;
+	redex->slots[0].num = val;
 	redex->variety = NODE_VAL;
 	redex->nslots = 1;
 	return redex;
@@ -181,45 +163,32 @@ prim_reduce_unary_list(struct node *redex, enum prim_variety variety)
 	 *	Of course referencing @H from @R *creates* a reference
 	 *	to @H, which cancels out the dereference in #3.  Taking
 	 *	the creates this reference to @T instead.
+	 *
+	 * XXX generalize this comment ^^^ and move to top level.
 	 */
-	struct node *op = redex->slots[0].subst,
-		    *arg = redex->slots[1].subst;
-	op->nref--;			/* deref operator (@O above) */
-	assert(op->nref >= 0);
-	arg->nref--;			/* deref cell (@C above) */
-	assert(arg->nref >= 0);
+	struct node *arg = redex->slots[1].subst;
+	assert(arg->nslots == 2);
 
-	struct slot car = arg->slots[0], cdr = arg->slots[1];
-	assert(slot_is_ref(car) && slot_is_ref(cdr));
+	struct slot var;
 	switch (variety) {
-	case PRIM_CAR:
-		redex->slots[0] = car;
-		if (car.variety == SLOT_SUBST) car.subst->nref++;
-		if (cdr.variety == SLOT_SUBST) {
-#ifdef XXX_REFERENCE_COUNTING_FIXED
-			cdr.subst->nref--;	/* deref cdr (@T above) */
-			assert(cdr.subst->nref >= 0);
-#endif	/* XXX_REFERENCE_COUNTING_FIXED */
-		}
-		break;
-	case PRIM_CDR:
-		redex->slots[0] = cdr;
-		if (cdr.variety == SLOT_SUBST) cdr.subst->nref++;
-		if (car.variety == SLOT_SUBST) {
-#ifdef XXX_REFERENCE_COUNTING_FIXED
-			car.subst->nref--;	/* deref car (@H above) */
-			assert(car.subst->nref >= 0);
-#endif	/* XXX_REFERENCE_COUNTING_FIXED */
-		}
-		break;
-	default:
-		panicf("Unhandled primitive variety %d\n", variety);
+	case PRIM_CAR:	var = arg->slots[0]; break;
+	case PRIM_CDR:	var = arg->slots[1]; break;
+	default: panicf("Unhandled primitive variety %d\n", variety);
 	}
+
+	/*
+	 * If we've copied an explicit substitution, bump the reference
+	 * count to reflect the new sharing.
+	 */
+	assert(slot_is_ref(var));
+	if (var.variety == SLOT_SUBST) var.subst->nref++;
 
 	assert(redex->nref == 1);
 	assert(redex->backref);
 	assert(redex->variety == NODE_APP);
 	assert(redex->nslots == 2);
+	node_recycle(redex);
+	redex->slots[0] = var;
 	redex->variety = NODE_VAR;
 	redex->nslots = 1;
 	return redex;
@@ -244,7 +213,10 @@ bool prim_reducible(struct node *redex)
 	case PRIM_LT:
 	case PRIM_LTE:
 	case PRIM_GT:
-	case PRIM_GTE: {
+	case PRIM_GTE:
+	case PRIM_AND:
+	case PRIM_OR:
+	case PRIM_XOR: {
 		struct node *num1, *num2;
 		return	redex->nslots == 3 &&
 			redex->slots[1].variety == SLOT_SUBST &&
@@ -291,6 +263,9 @@ struct node *prim_reduce(struct node *redex)
 	case PRIM_LTE:
 	case PRIM_GT:
 	case PRIM_GTE:
+	case PRIM_AND:
+	case PRIM_OR:
+	case PRIM_XOR:
 		return prim_reduce_binary(redex, variety);
 	case PRIM_CAR:
 	case PRIM_CDR:

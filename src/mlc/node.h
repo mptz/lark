@@ -35,14 +35,14 @@
 enum slot_variety {
 	SLOT_INVALID,
 	SLOT_BODY,	/* subexpression e.g. function body */
-	SLOT_BOUND,
-	SLOT_FREE,
+	SLOT_BOUND,	/* bound variable, De Bruijn indexed */
+	SLOT_FREE,	/* free variable, as uninterpreted symbol */
 	SLOT_NULL,	/* placeholder for missing value */
-	SLOT_NUM,
+	SLOT_NUM,	/* floating-point number */
 	SLOT_PARAM,	/* formal parameter to abstraction */
-	SLOT_PRIM,
+	SLOT_PRIM,	/* primitive (built-in) function */
 	SLOT_SELF,	/* self-reference for recursive function */
-	SLOT_SUBST,
+	SLOT_SUBST,	/* explicit substitution, as node pointer */
 } __attribute__ ((packed));
 
 struct slot {
@@ -56,6 +56,10 @@ struct slot {
 		struct term *term;
 	};
 };
+
+static inline bool slot_is_name(const struct slot slot)
+	{ return slot.variety == SLOT_PARAM ||
+		 slot.variety == SLOT_SELF; }
 
 /*
  * We essentially support three types of references: bound variables,
@@ -162,6 +166,7 @@ extern const struct node *node_chase_lhs(const struct node *node);
 extern void node_deref(struct node *node);
 extern void node_free(struct node *node);
 extern void node_insert_after(struct node *node, struct node *dest);
+extern void node_recycle(struct node *node);
 extern void node_replace(struct node *node, struct node *dest);
 extern void node_wipe_body(struct node *abs);
 

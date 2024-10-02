@@ -68,7 +68,7 @@ static int mlc_yyerror(mlc_yyscan_t scanner, const char *s);
 %token <form> NUM VARIABLE
 
 %type <form> term terms seq expr factor arith
-%type <form> app app1 appn
+%type <form> app app1
 %type <form> base pack abs fix nil pair params prim test var
 
 %%
@@ -151,12 +151,11 @@ test	: '[' term '?' terms '|' terms ']'	{ $$ = FormTest($2, $4, $6); };
 
 app	: app1 abs		{ $$ = FormApp($2, $1, FORM_SYNTAX_POSTFIX); }
 	| app1 fix		{ $$ = FormApp($2, $1, FORM_SYNTAX_POSTFIX); }
-	| app1 appn		{ $$ = FormApp($1, $2, FORM_SYNTAX_PREFIX); }
+	| app1 pack		{ $$ = FormApp($1, $2, FORM_SYNTAX_PREFIX); }
 	| app abs		{ $$ = FormApp($2, $1, FORM_SYNTAX_POSTFIX); }
 	| app fix		{ $$ = FormApp($2, $1, FORM_SYNTAX_POSTFIX); }
-	| app appn		{ $$ = FormApp($1, $2, FORM_SYNTAX_PREFIX); };
+	| app pack		{ $$ = FormApp($1, $2, FORM_SYNTAX_PREFIX); };
 app1	: abs | fix | test | base;
-appn	: pack;
 
 /*
  * Open question as to whether it makes sense to support 0-ary abstractions,

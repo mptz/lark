@@ -139,7 +139,7 @@ static void sanity_check_l(const struct node *node, unsigned depth)
  * For right-to-left sanity checks (which we apply before reducing
  * and on reaching normal form), we check a reduction invariant:
  * we should no longer have nodes with reference count == 0.  We
- * additionally perform depth sanity checks.
+ * additionally perform list-structure and depth sanity checks.
  *
  * After reducing, we could additionally check that the term is in
  * normal form (no beta-redexes either at the top level or within
@@ -174,16 +174,12 @@ enum eval_dir { RL, LR };
 
 static void trace_eval(enum eval_dir dir, unsigned depth, struct node *head)
 {
+	struct node *lb = dir == RL ? head : head->prev,
+		    *rb = dir == RL ? head->next : head;
 	printf("eval_%s[+%u]: ", dir == RL ? "rl" : "lr", depth);
-	if (dir == RL) {
-		node_print_until(head);
-		fputs(" <=< ", stdout);
-		node_print_after(head->next);
-	} else {
-		node_print_until(head->prev);
-		fputs(" >=> ", stdout);
-		node_print_after(head);
-	}
+	node_print_until(lb);
+	fputs(dir == RL ? " <=L=< " : " >=R=> ", stdout);
+	node_print_after(rb);
 	putchar('\n');
 	fflush(stdout);
 }
@@ -192,7 +188,7 @@ static void trace_eval(enum eval_dir dir, unsigned depth, struct node *head)
  * Reduction proceeds right-to-left then left-to-right.  Each pass has
  * both a primary and a secondary function:
  *
- * Right-to-left: 1) beta reduction; 2) disintermediating renames.
+ * Right-to-left: 1) simplify redexes; 2) disintermediating renames.
  * Left-to-right: 1) reducing under abstractions; 2) garbage collection.
  *
  * Descent into an abstraction is a recursive traversal, i.e. we echo
@@ -217,15 +213,6 @@ eval_body:
 eval_rl:
 	if (EVAL_STATS) the_eval_stats.eval_rl++;
 	if (TRACE_EVAL) trace_eval(RL, depth, head);
-	/*
-	 *                 headl    headr
-	 *  <==R-to-L===     |        |
-	 *                   v        v
-	 *       +-----+  #=====#  +-----+  +-----+
-	 * ... <-|-prev|<-|-prev|  |prev-|->|prev-|-> ...
-	 *       +-----+  #=====#  +-----+  +-----+
-	 *               *current*
-	 */
 	if (done(head))
 		goto rule_reverse;
 
@@ -246,15 +233,16 @@ eval_rl:
 	 * if the 0th slot is a substitution (a known term) rather than a
 	 * free or bound variable (an unknown term).  Or the term could be
 	 * a test... but without a substitution in the 0th slot we know
-	 * it's irreducible without variety-directed dispatch.
+	 * it's irreducible even before variety-directed dispatch.
 	 */
 	if (!head->nslots || head->slots[0].variety != SLOT_SUBST)
 		goto rule_move_left;		
 
 	/*
 	 * For many scenarios we simply move to the left without acting.
-	 * This section is a sequence of tests to determine if we can
-	 * take any reduction action at all.
+	 * This is true not only for obviously self-evaluating nodes but
+	 * also for e.g. cells, whose contents have been flattened out
+	 * and already evaluated, but whose structure is self-evaluating.
 	 */
 	switch (head->variety) {
 	case NODE_APP:
@@ -342,7 +330,7 @@ rule_beta:
 	 *    nodes.  Since application nodes can contain both bound and
 	 *    free variables, we must wrap those in substitution nodes
 	 *    prior to beta-reduction.
-	 *    
+	 *
 	 *    NOTE: in contrast to the SCAM abstract machine (both the
 	 *    abstract specification and the reference implementation),
 	 *    we don't allocate a new node when an argument slot already
@@ -540,7 +528,7 @@ rule_prim:
 	/*
 	 * Primitive reduction handles connecting the result to the
 	 * evaluation chain as well as freeing the original redex if
-	 * necessary.
+	 * necessary, making our job here easy.
 	 */
 	if (EVAL_STATS) the_eval_stats.rule_prim_redex++;
 	head = prim_reduce(head);
@@ -549,45 +537,40 @@ rule_prim:
 rule_rename:
 	/*
 	 * Note that backreferences point not to nodes, but to slots
-	 * within nodes, as depicted in this diagram.
+	 * within nodes, as depicted in this diagram illustrating the
+	 * pointer-snapping (disintermediating) nature of renames.
+	 * Note that Z's backreference doesn't come into the picture
+	 * since it's to the right of the reduction head, and Z's net
+	 * reference count is unaffected.
 	 *
-	 * Before:
-	 *                (head)
-	 *                   |
-	 *        +---------+|   +---------+
-         *        |         ||   |         |
-	 *        |         VV   |         V
-	 *  [@X subst] ... [@Y subst] ... [@Z <anything>]
-	 *      ^              ^ backref       backref
-	 *      |              |    |             | 
-	 *      +-------------------+             |
-	 *                     |                  |
-	 *                     +------------------+
+	 * /Before/       head 
+	 *                  | 
+	 *        +---------+            +---------+
+	 *        |         |            |         |
+	 *        |         V            |         V
+	 *  [@X subst] ... [@Y backref subst] ... [@Z <anything>]
+	 *        ^               |
+	 *        |               |
+	 *        +---------------+
 	 *
-	 *           (head)
-	 * After:       |
-	 *        +------------------------+
-         *        |     |                  |
-	 *        |     V                  V
-	 *  [@X subst] ... [@Y subst] ... [@Z <anything>]
-	 *      ^           (freed)            backref
-	 *      |                                 | 
-	 *      +---------------------------------+
+	 * /After/    head 
+	 *              |
+	 *        +---------+
+	 *        |     |   |
+	 *        |     V   V
+	 *  [@X subst] ... [@Z <anything>]
+	 *
+	 *		[@Y subst] (disconnected & freed)
 	 */
 	if (EVAL_STATS) the_eval_stats.rule_rename++;
 	assert(head->nslots == 1);
 	assert(head->slots[0].variety == SLOT_SUBST);
 	assert(head->backref);
 	assert(head->backref->subst == head);
-	x = head->slots[0].subst;	/* x is the target */
-	x->backref = head->backref;	/* snap backwards ref */
-	x->backref->subst = x;		/* snap forwards ref */
-	y = head;			/* store head in temp */
-	head = head->prev;		/* move left */
-	node_remove(y);			/* dispose of rename... */
-	y->nref--;
-	assert(!y->nref);
-	node_free(y);
+	head->backref->subst = head->slots[0].subst;	/* snap ref */
+	head->nref--;			/* since parent ref redirected */
+	x = head, head = head->prev;	/* store head & move left */
+	node_remove(x), node_free(x);	/* dispose of rename node */
 	goto eval_rl;
 
 rule_test:
@@ -636,11 +619,10 @@ rule_test:
 	y->next->prev = y;
 
 	/*
-	 * Now we can update 'headl' to 'y', the right end of the chosen
+	 * Now we can update 'head' to 'y', the right end of the chosen
 	 * branch, and free the test node itself.
 	 */
-	x = head;
-	head = y;
+	x = head, head = y;
 	node_free(x);
 	goto eval_rl;
 
@@ -654,15 +636,6 @@ rule_reverse:
 eval_lr:
 	if (EVAL_STATS) the_eval_stats.eval_lr++;
 	if (TRACE_EVAL) trace_eval(LR, depth, head);
-	/*
-	 *                 headl    headr
-	 *  ===L-to-R==>     |        |
-	 *                   v        v
-	 *       +-----+  +-----+  #=====#  +-----+
-	 * ... <-|-prev|<-|-prev|  |prev-|->|prev-|-> ...
-	 *       +-----+  +-----+  #=====#  +-----+
-	 *                        *current*
-	 */
 	if (done(head)) {
 		if (!outer) goto done;
 		goto rule_exit_abs;

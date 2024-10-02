@@ -169,8 +169,9 @@ void node_deref(struct node *node)
 	assert(!node->nref);
 	for (size_t i = 0; i < node->nslots; ++i) {
 		if (node->slots[i].variety == SLOT_SUBST) {
-			assert(node->slots[i].subst->nref > 0);
-			node->slots[i].subst->nref--;
+			struct node *subst = node->slots[i].subst;
+			assert(subst->nref > 0);
+			subst->nref--;
 		}
 	}
 }
@@ -200,6 +201,7 @@ void node_free(struct node *node)
 {
 	if (!node)
 		return;
+	assert(!node->nref);
 
 	switch (node->variety) {
 	case NODE_SENTINEL:
@@ -241,6 +243,14 @@ void node_insert_after(struct node *node, struct node *dest)
 	node->next = dest->next;
 	node->prev->next = node;
 	node->next->prev = node;
+}
+
+void node_recycle(struct node *node)
+{
+	assert(node->nref == 1);
+	node->nref--, node_deref(node), node->nref++;
+	for (size_t i = 0; i < node->nslots; ++i)
+		node->slots[i].variety = SLOT_NULL;
 }
 
 void node_replace(struct node *node, struct node *dest)
@@ -486,24 +496,9 @@ static void node_print_contents(const struct node *node)
 	if (node->nslots > 1) putchar(')');
 }
 
-/*
- * The first node at toplevel and within each abstraction is a
- * "virtual substitution" for the value of the term as a whole,
- * denoted '*'.  Because it's associated with a nameless variable,
- * it can't be referenced--we confirm its reference count is 0 and
- * don't print its location.
- *
- * We can't check node->prev to determine whether this node is in
- * '*' position since we flip the direction of 'prev' pointers during
- * reduction and printing, so we have to be told by the caller.
- */
 static void node_print(const struct node *node)
 {
-	if (false /* XXX */) {
-		assert(node->nref == 0);
-		printf("[*+%d ", node->depth);
-	} else
-		printf("[@%s+%d#%d ", memloc(node), node->depth, node->nref);
+	printf("[@%s+%d#%d ", memloc(node), node->depth, node->nref);
 	node_print_contents(node);
 	putchar(']');
 }

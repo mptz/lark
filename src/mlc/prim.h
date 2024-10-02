@@ -26,13 +26,20 @@
 
 enum prim_variety {
 	PRIM_INVALID,
+
 	PRIM_ADD, PRIM_SUB,
 	PRIM_MULT, PRIM_DIV,
+
 	PRIM_EQ, PRIM_NE,
 	PRIM_LT, PRIM_LTE,
 	PRIM_GT, PRIM_GTE,
+
+	PRIM_AND, PRIM_OR, PRIM_XOR,
+	PRIM_NOT,
+
 	PRIM_CAR, PRIM_CDR,
 	PRIM_ISNIL, PRIM_ISPAIR,
+
 } __attribute__ ((packed));
 
 extern const char *prim_name(enum prim_variety variety);

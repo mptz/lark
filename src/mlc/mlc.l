@@ -77,6 +77,10 @@ _		return '_';
 \:=		return ASSIGN;
 \n		return END_OF_LINE;
 
+#and		yylval->prim = PRIM_AND;	return PRIM;
+#or		yylval->prim = PRIM_OR;		return PRIM;
+#xor		yylval->prim = PRIM_XOR;	return PRIM;
+
 #0		return OPCAR;
 #1		return OPCDR;
 #is-nil		yylval->prim = PRIM_ISNIL;	return PRIM;
