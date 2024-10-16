@@ -66,4 +66,9 @@ extern void wordtab_stats(struct wordtab *table, struct wordtab_stats *stats);
 extern void wordtab_iter_init(struct wordtab *table, struct wordtab_iter *iter);
 extern struct wordtab_entry *wordtab_iter_next(struct wordtab_iter *iter);
 
+static inline void wordtab_set(struct wordtab *table, word key)
+	{ wordtab_put(table, key, (void*) ~(word) table->oob); }
+static inline bool wordtab_test(const struct wordtab *table, word key)
+	{ return wordtab_get(table, key) != table->oob; }
+
 #endif /* LARK_UTIL_WORDTAB_H */
