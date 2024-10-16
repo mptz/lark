@@ -9,6 +9,7 @@ Build dependencies (on Debian):
 	libgmp-dev
 	libreadline-dev
 	texlive
+	ghostscript
 
 To build and test:
 
