@@ -1,7 +1,7 @@
 make_library(libutil,
 	     base64.c bytebuf.c circlist.c
 	     fdutil.c fgh.c fghk.c
-	     hashtab.c huid.c memutil.c message.c page.c
+	     hashtab.c huid.c huidrand.c memutil.c message.c page.c
 	     sha2.c symtab.c twister.c twofish.c
 	     utf8.c util.c wordbuf.c wordtab.c)
 make_binary(gensyms, gensyms.c, util)
