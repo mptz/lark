@@ -51,6 +51,7 @@ static symbol_mt fresh_name(symbol_mt name, const struct wordbuf *names)
 				goto freshen;
 		return name;
 	freshen:
+		/* dummy statement preceding declaration */;
 		const char *last = symtab_lookup(name);
 		if (*last == '\0')
 			panic("Empty symbol in fresh_name\n");
