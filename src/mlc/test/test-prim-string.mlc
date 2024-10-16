@@ -1,0 +1,13 @@
+|* Test primitive string operations.
+
+#echo "Testing cell primitives: ++ (string concatenation)".
+"" ++ "".
+"" ++ "" ++ "".
+"" ++ "abc".
+"abc" ++ "".
+"abc" ++ "def".
+"abc" ++ "def" ++ "ghi".
+"abc" ++ unknown.
+unknown ++ "abc".
+[x. x ++ "abc"].
+[x. "abc" ++ x].

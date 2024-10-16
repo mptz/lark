@@ -23,11 +23,13 @@
 #include <assert.h>
 #include <string.h>
 
+#include <util/memutil.h>
 #include <util/message.h>
 #include <util/wordbuf.h>
 
 #include "env.h"
 #include "form.h"
+#include "prim.h"
 #include "readback.h"
 #include "term.h"
 
@@ -60,9 +62,15 @@ static struct form *readback_term(const struct term *term,
  */
 static struct form *readback_abs(const struct term *abs, struct wordbuf *names)
 {
-	assert(abs->variety == TERM_ABS || abs->variety == TERM_FIX); /* XXX */
+	assert(abs->variety == TERM_ABS || abs->variety == TERM_FIX);
 	struct form *params = NULL;
 	for (size_t i = 0; i < abs->abs.nformals; ++i) {
+		if (!i) {
+			/* self-reference */
+			/* XXX if we preserve the name we'll need to freshen */
+			wordbuf_push(names, abs->abs.formals[i]);
+			continue;
+		}
 		/*
 		 * We don't need fresh names for placeholders; they
 		 * aren't referenced by bound variables.
@@ -83,13 +91,15 @@ static struct form *readback_abs(const struct term *abs, struct wordbuf *names)
 	}
 
 	wordbuf_popn(names, abs->abs.nformals + 1 /* for formal count */);
-	return FormAbs(params, bodies);
+	return abs->variety == TERM_FIX ?
+		FormFix(FormVar(abs->abs.formals[0]), params, bodies) :
+		FormAbs(params, bodies);
 }
 
 static struct form *readback_app(const struct term *app, struct wordbuf *names)
 {
 	assert(app->variety == TERM_APP);
-	struct form *args = NULL;
+	struct form *fun = NULL, *args = NULL;
 	for (size_t i = 0; i < app->app.nargs; ++i) {
 		struct form *arg = readback_term(app->app.args[i], names);
 		assert(!arg->prev);
@@ -97,12 +107,34 @@ static struct form *readback_app(const struct term *app, struct wordbuf *names)
 	}
 	if (app->app.fun->variety == TERM_PRIM) {
 		assert(app->app.nargs == 1 || app->app.nargs == 2);
-		return app->app.nargs == 1 ?
-			FormOp1(app->app.fun->prim, args) :
-			FormOp2(app->app.fun->prim, args->prev, args);
+		switch (app->app.fun->prim->syntax) {
+		case PRIM_SYNTAX_OP1:
+			return FormOp1(app->app.fun->prim, args);
+		case PRIM_SYNTAX_OP2:
+			return FormOp2(app->app.fun->prim, args->prev, args);
+		case PRIM_SYNTAX_FUNCTION:
+			fun = FormPrim(app->app.fun->prim, NULL);
+			break;
+		default:
+			panicf("Unhandled primitive syntax %d\n",
+			       app->app.fun->prim->syntax);
+		}
 	}
-	return FormApp(readback_term(app->app.fun, names), args,
+	return FormApp(fun ? : readback_term(app->app.fun, names), args,
 		       FORM_SYNTAX_AUTO);
+}
+
+static struct form *
+readback_cell(const struct term *term, struct wordbuf *names)
+{
+	assert(term->variety == TERM_CELL);
+	struct form *elts = NULL;
+	for (size_t i = 0; i < term->cell.nelts; ++i) {
+		struct form *elt = readback_term(term->cell.elts[i], names);
+		assert(!elt->prev);
+		elt->prev = elts, elts = elt;
+	}
+	return FormCell(elts);
 }
 
 static struct form *readback_name(int up, int across, struct wordbuf *names)
@@ -159,23 +191,24 @@ static struct form *readback_term(const struct term *term,
 				  struct wordbuf *names)
 {
 	switch (term->variety) {
-	case TERM_ABS: case TERM_FIX:	/* XXX? */
+	case TERM_ABS: case TERM_FIX:
 		return readback_abs(term, names);
 	case TERM_APP:
 		return readback_app(term, names);
 	case TERM_BOUND_VAR:
 		return readback_name(term->bv.up, term->bv.across, names);
+	case TERM_CELL:
+		return readback_cell(term, names);
 	case TERM_FREE_VAR:
 		return FormVar(term->fv.name);
-	case TERM_NIL:
-		return FormNil();
 	case TERM_NUM:
 		return FormNum(term->num);
-	case TERM_PAIR:
-		return FormPair(readback_term(term->pair.car, names),
-				readback_term(term->pair.cdr, names));
 	case TERM_PRIM:
-		return FormPrim(term->prim);
+		return FormPrim(term->prim, NULL);
+	case TERM_PRUNED:
+		return FormVarS("<PRUNED>");
+	case TERM_STRING:
+		return FormString(xstrdup(term->str));
 	case TERM_TEST:
 		return readback_test(term, names);
 	default:

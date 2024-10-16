@@ -37,12 +37,14 @@ enum term_variety {
 	TERM_ABS,		/* nonrecursive abstraction */
 	TERM_APP,
 	TERM_BOUND_VAR,		/* i.e. local variable */
+	TERM_CELL,
 	TERM_FREE_VAR,		/* i.e. global variable */
 	TERM_FIX,		/* recursive abstraction */
-	TERM_NIL,
+	TERM_LET,
 	TERM_NUM,
-	TERM_PAIR,
 	TERM_PRIM,
+	TERM_PRUNED,		/* truncated unsharing */
+	TERM_STRING,
 	TERM_TEST,
 } __attribute__ ((packed));
 
@@ -55,12 +57,15 @@ struct term {
 		struct { struct term *fun;
 			 size_t nargs; struct term **args; } app;
 		struct { int up, across; symbol_mt name; } bv;
+		struct { size_t nelts; struct term **elts; } cell;
 		struct { symbol_mt name; } fv;
-		struct { struct term *car, *cdr; } pair;
+		struct { size_t ndefs; symbol_mt *vars;
+			 struct term **vals, *body; } let;
 		struct { size_t ncsqs, nalts;
 			 struct term *pred, **csqs, **alts; } test;
 		double num;
-		unsigned prim;
+		const struct prim *prim;
+		const char *str;
 	};
 };
 
@@ -68,13 +73,16 @@ extern struct term *TermAbs(size_t nformals, symbol_mt *formals,
 			    size_t nbodies, struct term **bodies);
 extern struct term *TermApp(struct term *fun, size_t nargs, struct term **args);
 extern struct term *TermBoundVar(int up, int across, symbol_mt name);
+extern struct term *TermCell(size_t nelts, struct term **elts);
 extern struct term *TermFix(size_t nformals, symbol_mt *formals,
 			    size_t nbodies, struct term **bodies);
 extern struct term *TermFreeVar(symbol_mt name);
-extern struct term *TermNil(void);
-extern struct term *TermPair(struct term *car, struct term *cdr);
-extern struct term *TermPrim(unsigned prim);
+extern struct term *TermLet(size_t ndefs, symbol_mt *vars,
+			    struct term **vals, struct term *body);
+extern struct term *TermPrim(const struct prim *prim);
+extern struct term *TermPruned(void);
 extern struct term *TermNum(double num);
+extern struct term *TermString(const char *str);
 extern struct term *TermTest(struct term *pred,
 			     size_t ncsqs, struct term **csqs,
 			     size_t nalts, struct term **alts);

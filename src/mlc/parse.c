@@ -37,11 +37,11 @@ int parse_file(const char *pathname)
 	if (!input)
 		return xperror(pathname);
 
-	mlc_yyscan_t scanner;
-	mlc_yylex_init(&scanner);
-	mlc_yyrestart(input, scanner);
-	int retval = mlc_yyparse(scanner);
-	mlc_yylex_destroy(scanner);
+	struct scanner_state scanner;
+	mlc_scan_init(&scanner);
+	mlc_yyrestart(input, scanner.flexstate);
+	int retval = mlc_yyparse(scanner.flexstate);
+	mlc_scan_fini(&scanner);
 	if (input != stdin) fclose(input);
 	return retval;
 }
@@ -82,26 +82,26 @@ int parse_include(const char *pathname)
 		}
 	}
 
-	mlc_yyscan_t scanner;
-	mlc_yylex_init(&scanner);
-	mlc_yyrestart(fin, scanner);
+	struct scanner_state scanner;
+	mlc_scan_init(&scanner);
+	mlc_yyrestart(fin, scanner.flexstate);
 	int retval = 0;
-	if (mlc_yyparse(scanner)) {
+	if (mlc_yyparse(scanner.flexstate)) {
 		fprintf(stderr, "File include failed (parse error): %s\n",
 			pathname);
 		retval = -1;
 	}
-	mlc_yylex_destroy(scanner);
+	mlc_scan_fini(&scanner);
 	fclose(fin);
 	return retval;
 }
 
 int parse_stdin(void)
 {
-	mlc_yyscan_t scanner;
-	mlc_yylex_init(&scanner);
-	mlc_yyrestart(stdin, scanner);
-	int retval = mlc_yyparse(scanner);
-	mlc_yylex_destroy(scanner);
+	struct scanner_state scanner;
+	mlc_scan_init(&scanner);
+	mlc_yyrestart(stdin, scanner.flexstate);
+	int retval = mlc_yyparse(scanner.flexstate);
+	mlc_scan_fini(&scanner);
 	return retval;
 }

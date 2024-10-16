@@ -15,20 +15,18 @@ Call arity (native rather than curried multi-argument functions).
 Indented & more-readable node listings.
 Atomic numbers and arithmetic operations on them.
 Native numeric test operations.
-Native cons cells/arrays.
+Native n-ary cells (2-cells are pairs, 0-cells are nil).
+Native recursion.
+Native strings.
+Let expressions.
+Reactive garbage collection under heap pressure (with hysteresis).
 
 What's Coming
 -------------
-Native recursion.
-Let expressions.
-Return arity (functions evaluate to multiple values).
-
-What's Possible (Not In Yet)
-----------------------------
-Less-redundant lifting/on-demand global variable expansion.
+Less-redundant lifting/on-demand global variable expansion (opaque vars).
 
 What's Out
 ----------
 Keyword arities (arguments distinguished by keywords not position).
-Type checking: This calculus is untyped.
-Dependent types: Ditto.
+Return arity (functions evaluate to multiple values).
+Type checking, dependent types: This calculus is untyped.

@@ -23,12 +23,15 @@
 #include <assert.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <string.h>
 
 #include <util/message.h>
 
 #include "beta.h"
-#include "node.h"
+#include "heap.h"
 #include "memloc.h"
+#include "mlc.h"
+#include "node.h"
 #include "prim.h"
 #include "reduce.h"
 
@@ -41,44 +44,90 @@ struct eval_stats {
 		reduce_start, reduce_done,
 		eval_rl, eval_lr,
 		rule_beta, rule_rename, rule_test,
-		rule_prim, rule_prim_redex, rule_prim_irred,
+		rule_zeta,
+		rule_prim,
 		rule_move_left, rule_reverse, rule_move_right,
-		rule_enter_abs, rule_exit_abs, rule_collect,
+		rule_move_up, rule_collect,
+		rule_enter_abs, rule_exit_abs,
+		rule_enter_test, rule_exit_test,
 		quick_inert_unref, quick_value_unref, quick_beta_move;
 };
 
 static struct eval_stats the_eval_stats;
+
+static void gc(struct node *head, struct node *outer)
+{
+	if (!quiet_setting)
+		fputs("==================== COLLECTING "
+		      "GARBAGE ====================\n", stderr);
+	do {
+		assert(!done(head));
+		for (head = head->next; !done(head); /* nada */) {
+			if (head->nref)
+				head = head->next;
+			else {
+				struct node *tmp = head->next;
+				node_remove(head);
+				node_deref(head);
+				node_free(head);
+				head = tmp;
+			}
+		}
+		head = outer;
+		if (head) outer = head->outer;
+	} while (head);
+	node_heap_calibrate();
+	fflush(stdout);
+	if (!quiet_setting) print_heap_stats();
+}
 
 void print_eval_stats(void)
 {
 	printf(
 	"\t\t\tREDUCTION STATISTICS\n"
 	"\t\t\t====================\n"
-	"Steps:\t%12s %-10lu %12s %-10lu %12s %-10lu\n"
-	"Rules:\t%12s %-10lu %12s %-10lu %12s %-10lu\n"
-	      "\t%12s %-10lu %12s %-10lu %12s %-10lu\n"
-	      "\t%12s %-10lu %12s %-10lu %12s %-10lu\n"
-	      "\t%12s %-10lu %12s %-10lu %12s %-10lu\n"
-	"Quick:\t%12s %-10lu %12s %-10lu %12s %-10lu\n",
-	"reductions",	the_eval_stats.reduce_start,
+	"Steps:\t%12s %-10lu %12s %-10lu %12s %-10lu\n"		/* 1 */
+	"Rules:\t%12s %-10lu %12s %-10lu %12s %-10lu\n"		/* 2 */
+	      "\t%12s %-10lu %12s %-10lu\n"			/* 3 */
+	      "\t%12s %-10lu %12s %-10lu %12s %-10lu\n"		/* 4 */
+	      "\t%12s %-10lu %12s %-10lu\n"			/* 5 */
+	      "\t%12s %-10lu %12s %-10lu\n"			/* 6 */
+	      "\t%12s %-10lu %12s %-10lu\n"			/* 7 */
+	"Quick:\t%12s %-10lu %12s %-10lu %12s %-10lu\n",	/* 8 */
+
+	"reductions",	the_eval_stats.reduce_start,		/* 1 */
 	/* not showing reduce_done but won't differ unless reducing */
 	"eval_rl",	the_eval_stats.eval_rl,
 	"eval_lr",	the_eval_stats.eval_lr,
-	"beta",		the_eval_stats.rule_beta,
+
+	"beta",		the_eval_stats.rule_beta,		/* 2 */
 	"rename",	the_eval_stats.rule_rename,
 	"test",		the_eval_stats.rule_test,
+
+	"zeta",		the_eval_stats.rule_zeta,		/* 3 */
 	"prim",		the_eval_stats.rule_prim,
-	"prim_redex",	the_eval_stats.rule_prim_redex,
-	"prim_irred",	the_eval_stats.rule_prim_irred,
-	"move_left",	the_eval_stats.rule_move_left,
+
+	"move_left",	the_eval_stats.rule_move_left,		/* 4 */
 	"reverse",	the_eval_stats.rule_reverse,
 	"move_right",	the_eval_stats.rule_move_right,
-	"enter_abs",	the_eval_stats.rule_enter_abs,
-	"exit_abs",	the_eval_stats.rule_exit_abs,
+
+	"enter_abs",	the_eval_stats.rule_enter_abs,		/* 5 */
+	"enter_test",	the_eval_stats.rule_enter_test,
+
+	"exit_abs",	the_eval_stats.rule_exit_abs,		/* 6 */
+	"exit_test",	the_eval_stats.rule_exit_test,
+
+	"move_up",	the_eval_stats.rule_move_up,		/* 7 */
 	"collect",	the_eval_stats.rule_collect,
-	"inert_unref",	the_eval_stats.quick_inert_unref,
+
+	"inert_unref",	the_eval_stats.quick_inert_unref,	/* 8 */
 	"value_unref",	the_eval_stats.quick_value_unref,
 	"beta_move",	the_eval_stats.quick_beta_move);
+}
+
+void reset_eval_stats(void)
+{
+	memset(&the_eval_stats, 0, sizeof the_eval_stats);
 }
 
 /*
@@ -198,7 +247,7 @@ struct node *reduce(struct node *head)
 {
 	struct node *outer = NULL,	/* containing abstraction links */
 		    *x, *y;		/* temporaries */
-	unsigned depth = 0;
+	unsigned depth = 0, ticks = 0;
 
 	the_eval_stats.reduce_start++;
 	/* fall through to eval_body... */
@@ -215,6 +264,8 @@ eval_rl:
 	if (TRACE_EVAL) trace_eval(RL, depth, head);
 	if (done(head))
 		goto rule_reverse;
+	if ((++ticks & 0xFF) == 0 && the_heap_pressure > the_heap_threshold)
+		gc(head, outer);
 
 	/*
 	 * Verify some invariants: before we evaluate nodes in R-to-L,
@@ -224,6 +275,12 @@ eval_rl:
 	assert(head->nref == 1);
 	assert(head->backref);
 	assert(head->depth == depth);
+
+	/*
+	 * Let expressions are always reducible.
+	 */
+	if (head->variety == NODE_LET)
+		goto rule_zeta;
 
 	/*
 	 * For us to have anything to do, the 0th slot in the head node
@@ -289,6 +346,13 @@ rule_move_left:
 	head = head->prev;
 	goto eval_rl;
 
+rule_zeta:
+	if (EVAL_STATS) the_eval_stats.rule_zeta++;
+	assert(head->variety == NODE_LET);
+	assert(head->slots[0].variety == SLOT_BODY);
+	x = head;
+	goto do_subst;
+
 rule_beta:
 	if (EVAL_STATS) the_eval_stats.rule_beta++;
 	assert(head->slots[0].variety == SLOT_SUBST);
@@ -297,21 +361,9 @@ rule_beta:
 	assert(node_is_abs(x));
 	assert(x->nref > 0);
 	x->nref--;	/* since redex-root application is going away */
+	/* fall through to do_subst... */
 
-#ifdef RECURSION_IMPLEMENTED
-	/*
-	 * Recursive case... still working this out.
-	 */
-	assert(x->nslots >= 2);		/* body + at least one parameter */
-	if (x->slots[1].variety == SLOT_SELF) {
-		
-
-
-	} else {
-		/* move below arity check for nonrecursive here? */
-	}
-#endif
-
+do_subst:
 	/*
 	 * Arity mismatches simply trigger a panic... once this abstract
 	 * machine is handling previously type-checked terms in a typed
@@ -355,7 +407,7 @@ rule_beta:
 	 * We use the temporary 'y' from here to beta-reduction to
 	 * track self-reference.
 	 */
-	y = NULL;
+	y = x->variety == NODE_FIX ? x : NULL;
 	for (size_t i = 1; i < head->nslots; ++i) {
 		struct slot slot = head->slots[i];
 		assert(slot_is_ref(slot));
@@ -418,16 +470,18 @@ rule_beta:
 	 * have to traverse the entire body to perform variable
 	 * substitution and depth adjustments.
 	 *
-	 * The exception to this optimization is when x is also an
-	 * argument, i.e. self-application of x.  In that case the
-	 * reference count has fallen to 0 for the moment, but might
-	 * come back up as we substitute x for a bound variable in
-	 * the body of x (creating new references).  So we can't
-	 * destroy x's body yet.
+	 * In the presence of self-application, via fixpoints or x
+	 * being one of its ordinary arguments, this optimization is
+	 * unsafe; the reference count has fallen to 0 for the moment
+	 * but might increase as we substitute x for a bound variable
+	 * in its own body.  In that case, copy instead.
+	 *
+	 * XXX add comment about head == x for lets, verify & look for
+	 * cleanups.
 	 */
 	assert(head->depth == depth);
 	assert(head->depth >= x->depth);
-	if (x->nref == 0 && !y /* no self-reference */) {
+	if (head == x || (x->nref == 0 && !y /* no self-reference */)) {
 		if (EVAL_STATS) the_eval_stats.quick_beta_move++;
 		y = head;	/* save a redex reference before reducing */
 		head = beta_nocopy(head, node_take_body(x), depth,
@@ -514,24 +568,17 @@ rule_prim:
 	if (EVAL_STATS) the_eval_stats.rule_prim++;
 
 	/*
-	 * Depending on the primitive, the 'redex' may not have really
-	 * been a redex after all... for example, attempting to sum a
-	 * pair of bound variables cannot be simplified.  Testing for
-	 * a redex is primitive-specific; when the test fails we move
-	 * left without reducing.
-	 */
-	if (!prim_reducible(head)) {
-		if (EVAL_STATS) the_eval_stats.rule_prim_irred++;
-		goto rule_move_left;
-	}
-
-	/*
 	 * Primitive reduction handles connecting the result to the
 	 * evaluation chain as well as freeing the original redex if
 	 * necessary, making our job here easy.
 	 */
-	if (EVAL_STATS) the_eval_stats.rule_prim_redex++;
-	head = prim_reduce(head);
+	assert(head->nslots);
+	assert(head->slots[0].variety == SLOT_SUBST);
+	x = head->slots[0].subst;
+	assert(node_is_prim(x));
+	assert(x->nslots == 1);
+	assert(x->slots[0].prim->reduce);
+	head = x->slots[0].prim->reduce(x->slots[0].prim->variety, head);
 	goto eval_rl;
 
 rule_rename:
@@ -636,14 +683,19 @@ rule_reverse:
 eval_lr:
 	if (EVAL_STATS) the_eval_stats.eval_lr++;
 	if (TRACE_EVAL) trace_eval(LR, depth, head);
-	if (done(head)) {
-		if (!outer) goto done;
-		goto rule_exit_abs;
-	}
-	if (!head->nref)
-		goto rule_collect;
-	if (node_is_abs(head))
+	if (done(head)) goto rule_move_up;
+	if (!head->nref) goto rule_collect;
+
+	switch (head->variety) {
+	case NODE_ABS:
+	case NODE_FIX:
+	case NODE_LET:
 		goto rule_enter_abs;
+	case NODE_TEST:
+		goto rule_enter_test;
+	default:
+		/* fall through */;
+	}
 	/* fall through to rule_move_right... */
 
 /* rule_move_right: */
@@ -654,44 +706,27 @@ eval_lr:
 	head = head->next;
 	goto eval_lr;
 
-rule_enter_abs:
-	/*
-	 * Enter into an abstraction.  We only do this for abstractions
-	 * which are referenced by other terms; otherwise we gc them.
-	 * This avoids useless reduction work.
-	 */
-	if (EVAL_STATS) the_eval_stats.rule_enter_abs++;
-	assert(node_is_abs(head));
-	assert(head->nref);
-	assert(head->nslots >= 2);
-	assert(head->slots[1].variety == SLOT_PARAM ||
-	       head->slots[1].variety == SLOT_SELF);
-
-	head->outer = outer, outer = head;	/* push outer */
-	head = node_abs_body(head);		/* load body sentinel */
-	++depth;
-	goto eval_body;
-
-rule_exit_abs:
-	/*
-	 * Pop contexts to exit an abstraction body.  At this point
-	 * headl points to the (now-reduced) body of the abstraction
-	 * we entered, and headr is NULL since we're at the right end.
-	 *
-	 * Note that instead of restoring outer's headl and outer to
-	 * headl and headr (as they were when we saved them) we move
-	 * right since we're done handling this node.  This step thus
-	 * combines the pop and an equivalent of rule_move_right.
-	 */
-	if (EVAL_STATS) the_eval_stats.rule_exit_abs++;
-	assert(done(head));
-	assert(outer != NULL);
-	assert(node_is_abs(outer));
-	head = outer, outer = head->outer;	/* pop outer */
-	head = head->next;			/* move right */
-	assert(depth > 0);
-	--depth;
-	goto eval_lr;
+rule_move_up:
+	if (EVAL_STATS) the_eval_stats.rule_move_up++;
+	if (!outer) goto done;
+	switch (outer->variety) {
+	case NODE_ABS:
+	case NODE_FIX:
+	case NODE_LET:
+		goto rule_exit_abs;
+	case NODE_TEST:
+		if (outer->slots[SLOT_TEST_CSQ].subst == head) {
+			if (TRACE_EVAL)
+				printf("move_up[+%u]: csq ==> alt @%s\n",
+				       depth, memloc(outer));
+			head = outer->slots[SLOT_TEST_ALT].subst;
+			goto eval_body;
+		}
+		goto rule_exit_test;
+	default:
+		/* fall through */;
+	}
+	panicf("Unhandled node variety %d\n", outer->variety);
 
 rule_collect:
 	if (EVAL_STATS) the_eval_stats.rule_collect++;
@@ -701,6 +736,65 @@ rule_collect:
 	node_deref(head);
 	node_free(head);
 	head = x;
+	goto eval_lr;
+
+rule_enter_abs:
+	/*
+	 * Enter into an abstraction.  We only do this for abstractions
+	 * which are referenced by other terms; otherwise we gc them.
+	 * This avoids useless reduction work.  Although let expressions
+	 * are structured differently from abstractions, they can be
+	 * treated uniformly here.
+	 */
+	if (EVAL_STATS) the_eval_stats.rule_enter_abs++;
+	if (TRACE_EVAL)
+		printf("enter_abs[+%u]: vvv @%s\n", depth, memloc(head));
+	assert(node_is_binder(head));	/* ABS, FIX, or LET */
+	assert(head->nref);
+
+	head->outer = outer, outer = head;	/* push outer */
+	head = node_abs_body(head);		/* load body sentinel */
+	++depth;
+	goto eval_body;
+
+rule_exit_abs:
+	/*
+	 * Pop contexts to exit an abstraction body.  Note that instead
+	 * of restoring head to the value saved in outer, we move right
+	 * (to outer->next) since we're done reducing this node.
+	 */
+	if (EVAL_STATS) the_eval_stats.rule_exit_abs++;
+	assert(done(head));
+	assert(outer != NULL);
+	assert(node_is_binder(outer));
+	head = outer, outer = head->outer;	/* pop outer */
+	head = head->next;			/* move right */
+	assert(depth > 0);
+	--depth;
+	if (TRACE_EVAL)
+		printf("exit_abs[+%u]: ^^^ @%s\n", depth, memloc(head->prev));
+	goto eval_lr;
+
+rule_enter_test:
+	if (EVAL_STATS) the_eval_stats.rule_enter_test++;
+	if (TRACE_EVAL)
+		printf("enter_test[+%u]: vvv @%s\n", depth, memloc(head));
+	assert(head->variety == NODE_TEST);
+	assert(head->nref);
+
+	head->outer = outer, outer = head;		/* push outer */
+	head = head->slots[SLOT_TEST_CSQ].subst;	/* load body sentinel */
+	goto eval_body;
+
+rule_exit_test:
+	if (EVAL_STATS) the_eval_stats.rule_exit_test++;
+	assert(done(head));
+	assert(outer != NULL);
+	assert(outer->variety == NODE_TEST);
+	head = outer, outer = head->outer;	/* pop outer */
+	head = head->next;			/* move right */
+	if (TRACE_EVAL)
+		printf("exit_test[+%u]: ^^^ @%s\n", depth, memloc(head->prev));
 	goto eval_lr;
 
 done:

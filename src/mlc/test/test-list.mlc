@@ -1,25 +1,94 @@
-#include "list.mlc"
+#include "list.mlc".
+#include "numeric.mlc".
 
-singleton := cons (1, nil)
-fruits := cons (apple, cons (banana, cons (cherry, cons (durian, nil))))
+singleton := cons (1, nil).
+doubleton := cons (blt, cons (pbj, nil)).
+fruits := cons (apple, cons (banana, cons (cherry, cons (durian,
+	cons (eggplant, cons (fig, cons (grapefruit, nil))))))).
 
-#echo "Testing basic list length"
-basic-length (nil)
-basic-length (singleton)
-basic-length (fruits)
+#echo "List constants".
+singleton.
+doubleton.
+fruits.
 
-#echo "Testing list fold"
-fold-noop := [state, elem. state]
-fold (pass, fold-noop, nil)
-fold (pass, fold-noop, singleton)
-fold (pass, fold-noop, fruits)
+#echo "Testing basic list length".
+basic-length (nil).
+basic-length (singleton).
+basic-length (doubleton).
+basic-length (fruits).
 
-|* #echo "Testing iota"
+#echo "Testing list fold".
+fold-noop := [state, elem. state].
+fold (fold-noop, pass, nil).
+fold (fold-noop, pass, singleton).
+fold (fold-noop, pass, doubleton).
+fold (fold-noop, pass, fruits).
 
-|* #echo "Testing list fold"
+fold-last := [state, elem. elem].
+fold (fold-last, pass, nil).
+fold (fold-last, fail, singleton).
+fold (fold-last, fail, doubleton).
+fold (fold-last, fail, fruits).
 
-#echo "Testing combined list functions"
+|* Basic unfold tests are done via tests for makelist and iota, which are
+|* about as elementary as an unfold can get.
+
+#echo "Testing list length".
+length ([]).
+length (singleton).
+length (doubleton).
+length (fruits).
+
+#echo "Testing list reverse".
+reverse ([]).
+reverse (singleton).
+reverse (doubleton).
+reverse (fruits).
+
+#echo "Testing makelist".
+makelist (0, X).
+makelist (1, Y).
+makelist (2, Z).
+makelist (5, W).
+makelist (10, []).
+makelist (15, [x. x]).
+
+#echo "Testing iota".
+iota (0).
+iota (1).
+iota (5).
+
+#echo "Testing append".
+append (nil, nil).
+append (singleton, nil).
+append (nil, singleton).
+append (singleton, singleton).
+append (nil, fruits).
+append (fruits, nil).
+append (fruits, fruits).
+append (50; iota, 50; iota); length.
+
+#echo "Testing map".
+id := [x. x].
+map (id, nil).
+map (id, singleton).
+map (id, doubleton).
+map (id, fruits).
+incr := [n. n + 1].
+map (incr, nil).
+map (incr, iota (8)).
+map ([n. n * n], iota (8)).
+map (fib, iota (8)).
+map (banana, iota (4)).
+
+#echo "Testing combined list functions".
+[l. append (l; reverse, l)] (6; iota).
+
+slow-fact := [n. fold ([a, e. a * e], 1, n; iota)].
+slow-fact (0).
+slow-fact (1).
+slow-fact (2).
+slow-fact (5).
+
 |* Test fold via sum, unfold via iota
-add := [m, n. m + n]
-sum := [list. fold (0, add, list)]
-100; iota; sum
+100; iota; sum.

@@ -1,0 +1,100 @@
+#include "cell.mlc".
+#include "list.mlc".
+#include "sudoku.mlc".
+
+#echo "Testing digit <-> prime conversions".
+$fill (9, [d. digit-to-prime (d + 1)]).
+prime-to-digit (2).
+prime-to-digit (3).
+prime-to-digit (5).
+prime-to-digit (7).
+prime-to-digit (11).
+prime-to-digit (13).
+prime-to-digit (17).
+prime-to-digit (19).
+prime-to-digit (23).
+
+#echo "Testing square representation".
+unconstrained.
+$fill (9, [i. square-containing ([i + 1])]).
+[square-containing (all-digits) == unconstrained? pass | fail].
+
+#echo "Testing constraint application".
+odd-square := square-containing ([1 | 3 | 5 | 7 | 9]).
+odd-square.
+even-square := square-containing ([2 | 4 | 6 | 8]).
+even-square.
+
+|* should have no effect; digit already impossible
+constrain-square (odd-square, digit-to-prime (2)).	|* no effect
+constrain-square (odd-square, digit-to-prime (4)).	|* no effect
+constrain-square (odd-square, digit-to-prime (6)).	|* no effect
+constrain-square (odd-square, digit-to-prime (8)).	|* no effect
+
+|* should have no effect; already solved
+constrain-square (digit-to-prime (1), digit-to-prime (9)); prime-to-digit.
+constrain-square (digit-to-prime (2), digit-to-prime (3)); prime-to-digit.
+constrain-square (digit-to-prime (7), digit-to-prime (5)); prime-to-digit.
+constrain-square (digit-to-prime (8), digit-to-prime (1)); prime-to-digit.
+constrain-square (digit-to-prime (9), digit-to-prime (2)); prime-to-digit.
+
+|* should have no effect; already overconstrained
+constrain-square (1, digit-to-prime (2)).
+constrain-square (1, digit-to-prime (3)).
+constrain-square (1, digit-to-prime (5)).
+constrain-square (1, digit-to-prime (9)).
+
+|* still ambiguous, but modified
+constrain-square (odd-square, digit-to-prime (1)).
+constrain-square (odd-square, digit-to-prime (3)).
+constrain-square (odd-square, digit-to-prime (5)).
+constrain-square (odd-square, digit-to-prime (7)).
+constrain-square (odd-square, digit-to-prime (9)).
+
+|* newly solved
+constrain-check-solve := [d0, d1, c.
+	let { square := square-containing ([d0 | d1]).
+	      value := digit-to-prime (c). }
+	constrain-square (square, value); prime-to-digit].
+constrain-check-solve (5, 6, 5).
+constrain-check-solve (1, 2, 2).
+constrain-check-solve (8, 9, 8).
+constrain-check-solve (3, 4, 4).
+
+|* newly overconstrained squares return 1 so this should be 9 1's.
+$fill (9, [i. let {sq := digit-to-prime (i + 1)} constrain-square (sq, sq)]).
+
+|* should have nonzero digits only when square is a solution
+|* i.e. at prime-numbered indexes <= 23.
+$fill (50, square-solution).
+
+#echo "Testing possibility testing".
+
+square-possibilities (unconstrained).
+square-possibilities (23 * 11 * 7 * 5).
+square-possibilities (3 * 2).
+square-possibilities (17).
+square-possibilities (1).
+
+#echo "Testing grid representation".
+
+cellsum := [cell. gather ([m, n. m + n], 0, cell)].
+grid-index-sum := $fill (81, [i. i]); cellsum.
+grid-grand-sum := let { sum-cellsums := [s, e. s + cellsum (e)] }
+	[grid. gather (sum-cellsums, 0, grid)].
+[grid-grand-sum (grid-row-indexes) == grid-index-sum ? pass | fail].
+[grid-grand-sum (grid-col-indexes) == grid-index-sum ? pass | fail].
+[grid-grand-sum (grid-box-indexes) == grid-index-sum ? pass | fail].
+[grid-grand-sum (grid-groups) == 3 * grid-index-sum ? pass | fail].
+
+# gather-peers (0).
+# gather-peers (22).
+# gather-peers (51).
+# gather-peers (80).
+
+#echo "Testing constraint-propagation-only solving".
+try-solve (easy-grid); grid-to-string.
+try-solve (wikipedia-grid); grid-to-string.
+
+#echo "Testing backtracking solving".
+try-solve (nyt-medium-grid); grid-to-string.

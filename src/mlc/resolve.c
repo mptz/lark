@@ -33,6 +33,7 @@
 #include "form.h"
 #include "memloc.h"
 #include "node.h"
+#include "prim.h"
 #include "term.h"
 
 /*
@@ -47,6 +48,7 @@ static struct term *term_bind(struct term *term, int depth,
 {
 	switch (term->variety) {
 	case TERM_ABS:
+	case TERM_FIX:
 		for (size_t i = term->abs.nbodies; i--; /* nada */)
 			term->abs.bodies[i] =
 				term_bind(term->abs.bodies[i], depth + 1,
@@ -64,20 +66,28 @@ static struct term *term_bind(struct term *term, int depth,
 		assert(term->bv.up >= 0);
 		assert(term->bv.up < depth);
 		break;
+	case TERM_CELL:
+		for (size_t i = term->cell.nelts; i--; /* nada */)
+			term->cell.elts[i] =
+				term_bind(term->cell.elts[i], depth,
+					  nformals, formals);
+		break;
 	case TERM_FREE_VAR:
 		for (size_t i = nformals; i--; /* nada */)
 			if (formals[i] == term->fv.name)
 				return TermBoundVar(depth, i, term->fv.name);
 		break;
-	case TERM_NIL:
+	case TERM_LET:
+		term->let.body = term_bind(term->let.body, depth + 1,
+					   nformals, formals);
+		for (size_t i = term->let.ndefs; i--; /* nada */)
+			term->let.vals[i] =
+				term_bind(term->let.vals[i], depth,
+					  nformals, formals);
+		break;
 	case TERM_NUM:
 	case TERM_PRIM:
-		break;
-	case TERM_PAIR:
-		term->pair.car = term_bind(term->pair.car, depth,
-					   nformals, formals);
-		term->pair.cdr = term_bind(term->pair.cdr, depth,
-					   nformals, formals);
+	case TERM_STRING:
 		break;
 	case TERM_TEST:
 		term->test.pred = term_bind(term->test.pred, depth,
@@ -137,16 +147,18 @@ static struct term *lift(struct term *term, struct wordbuf *defs)
 	/*
 	 * Extract the names and values of definitions from the global
 	 * environment into formal parameter & argument lists.
+	 * XXX comment the +1 for formals (self-ref)
 	 */
-	symbol_mt *formals = xmalloc(sizeof *formals * ndefs);
+	symbol_mt *formals = xmalloc(sizeof *formals * ndefs + 1);
 	struct term **args = xmalloc(sizeof *args * ndefs);
 	for (size_t i = ndefs; i--; /* nada */) {
 		const struct env_entry *ee = (void*) wordbuf_at(defs, i);
 		assert(ee->var->variety == TERM_FREE_VAR);
 		assert(ee->val);
-		formals[i] = ee->var->fv.name;
+		formals[i+1] = ee->var->fv.name;
 		args[i] = ee->val;
 	}
+	formals[0] = the_empty_symbol;
 
 	/*
 	 * Create an abstraction wrapping the given term, with one formal
@@ -157,8 +169,8 @@ static struct term *lift(struct term *term, struct wordbuf *defs)
 	 * since term construction transfers ownership to the callee.
 	 */
 	struct term **bodies = xmalloc(sizeof *bodies);
-	bodies[0] = term_bind(term, 0, ndefs, formals);
-	return TermApp(TermAbs(ndefs, formals, 1, bodies), ndefs, args);
+	bodies[0] = term_bind(term, 0, ndefs+1, formals);
+	return TermApp(TermAbs(ndefs+1, formals, 1, bodies), ndefs, args);
 }
 
 struct context {
@@ -196,24 +208,20 @@ static struct term *form_convert_abs(const struct form *form,
 				     struct wordbuf *defs,
 				     struct context *context)
 {
-	/* XXX these are redundant; consider simplifying */
 	assert((form->variety == FORM_ABS && !form->abs.self) ||
 	       (form->variety == FORM_FIX &&  form->abs.self));
-	size_t nformals = form_length(form->abs.params) +
-			  (form->abs.self ? 1 : 0);
-	assert(nformals > 0);
+
+	/* the +1 is for self-reference (parameter 0 is self) */
+	size_t nformals = form_length(form->abs.params) + 1;
 
 	symbol_mt *formals = xmalloc(sizeof *formals * nformals),
 		  *fdst = formals + nformals;
 	const struct form *param;
-	for (param = form->abs.params; param; param = param->prev) {
-		assert(param->variety == FORM_VAR);
+	for (param = form->abs.params; param; param = param->prev)
 		*--fdst = param->var.name;
-	}
-	if (form->abs.self) {
-		assert(form->abs.self->variety == FORM_VAR);
-		*--fdst = form->abs.self->var.name;
-	}
+	*--fdst = form->abs.self ?
+		form->abs.self->var.name :
+		the_empty_symbol;
 	assert(fdst == formals);
 
 	struct context link = {
@@ -235,6 +243,38 @@ static struct term *form_convert_abs(const struct form *form,
 	return form->abs.self ?
 		TermFix(nformals, formals, nbodies, bodies) :
 		TermAbs(nformals, formals, nbodies, bodies);
+}
+
+static struct term *form_convert_let(const struct form *form,
+				     struct wordbuf *defs,
+				     struct context *context)
+{
+	assert(form->variety == FORM_LET);
+
+	const size_t ndefs = form_length(form->let.defs) + 1;
+	symbol_mt *vars = xmalloc(sizeof *vars * ndefs);
+	struct term **vals = xmalloc(sizeof *vals * ndefs);
+	const struct form *def;
+	size_t i;
+	for (i = ndefs, def = form->let.defs; i-- > 1; def = def->prev) {
+		assert(def->def.var->variety == FORM_VAR);
+		vars[i] = def->def.var->var.name;
+		vals[i] = form_convert(def->def.val, defs, context);
+	}
+	assert(!i);
+	vars[i] = the_empty_symbol;
+	vals[i] = TermPrim(&prim_undefined);
+	assert(!def);
+
+	struct context link = {
+		.prev = context,
+		.nbinders = ndefs,
+		.binders = vars,	/* freed when term is freed */
+	};
+
+	/* transfer ownership of 'vars' and 'vals' */
+	return TermLet(ndefs, vars, vals,
+		       form_convert(form->let.body, defs, &link));
 }
 
 /*
@@ -268,8 +308,18 @@ static struct term *form_convert(const struct form *form,
 		return TermApp(form_convert(form->app.fun, defs, context),
 			       nargs, args);
 	}
-	case FORM_NIL:
-		return TermNil();
+	case FORM_CELL: {
+		const size_t nelts = form_length(form->cell.elts);
+		struct term **elts = xmalloc(sizeof *elts * nelts),
+			    **dst = elts + nelts;
+		for (const struct form *elt = form->cell.elts;
+		     elt; elt = elt->prev)
+			*--dst = form_convert(elt, defs, context);
+		assert(dst == elts);
+		return TermCell(nelts, elts);
+	}
+	case FORM_LET:
+		return form_convert_let(form, defs, context);
 	case FORM_NUM:
 		return TermNum(form->num);
 	case FORM_OP1: {
@@ -278,7 +328,7 @@ static struct term *form_convert(const struct form *form,
 			    **dst = args + nargs;
 		*--dst = form_convert(form->op1.arg, defs, context);
 		assert(dst == args);
-		return TermApp(TermPrim(form->op1.op), nargs, args);
+		return TermApp(TermPrim(form->op1.prim), nargs, args);
 	}
 	case FORM_OP2: {
 		const size_t nargs = 2;
@@ -287,13 +337,12 @@ static struct term *form_convert(const struct form *form,
 		*--dst = form_convert(form->op2.rhs, defs, context);
 		*--dst = form_convert(form->op2.lhs, defs, context);
 		assert(dst == args);
-		return TermApp(TermPrim(form->op2.op), nargs, args);
+		return TermApp(TermPrim(form->op2.prim), nargs, args);
 	}
-	case FORM_PAIR:
-		return TermPair(form_convert(form->pair.car, defs, context),
-				form_convert(form->pair.cdr, defs, context));
 	case FORM_PRIM:
 		return TermPrim(form->prim);
+	case FORM_STRING:
+		return TermString(xstrdup(form->str));
 	case FORM_TEST: {
 		size_t ncsq = form_length(form->test.csq),
 		       nalt = form_length(form->test.alt);

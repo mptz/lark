@@ -26,8 +26,11 @@
 #include <readline/history.h>
 #include <readline/readline.h>	/* must follow stdio.h */
 #include <stdlib.h>
+#include <sys/random.h>
 #include <unistd.h>
 
+#include <util/base64.h>
+#include <util/huidrand.h>
 #include <util/memutil.h>
 #include <util/message.h>
 
@@ -44,18 +47,34 @@ int quiet_setting = 0;
 
 static void parse_line(const char *line)
 {
-	mlc_yyscan_t scanner;
-	mlc_yylex_init(&scanner);
-	mlc_lex_string(line, scanner);
-	mlc_yyparse(scanner);
-	mlc_yylex_destroy(scanner);
+	/*
+	 * XXX we should avoid creating and destroying a scanner for
+	 * each line... it's probably fast enough to not worry about,
+	 * but makes multiline tokens impossible.
+	 */
+	struct scanner_state scanner;
+	mlc_scan_init(&scanner);
+	mlc_scan_string(line, &scanner);
+	mlc_yyparse(scanner.flexstate);
+	mlc_scan_fini(&scanner);
 }
 
 static void usage(void) __attribute__ ((noreturn));
 
+#define NONCE_BYTES 36
+
 static void init(void)
 {
+	char random_bytes [NONCE_BYTES], text_bytes [NONCE_BYTES*2];
+	getrandom(random_bytes, sizeof random_bytes, 0);
+	size_t n = base64_encode(text_bytes, sizeof text_bytes,
+				 random_bytes, sizeof random_bytes);
+	text_bytes[n] = '\0';
+	const char *attestor = "mlc interpreter " __FILE__ " " __DATE__;
+	huid_init(text_bytes, attestor);
+
 	the_placeholder_symbol = symtab_intern("_");
+
 	node_heap_init();
 	env_init();
 }

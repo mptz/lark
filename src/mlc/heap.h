@@ -1,7 +1,7 @@
 #ifndef LARK_MLC_HEAP_H
 #define LARK_MLC_HEAP_H
 /*
- * Copyright (c) 2009-2023 Michael P. Touloumtzis.
+ * Copyright (c) 2009-2024 Michael P. Touloumtzis.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -22,11 +22,17 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
+#include <stddef.h>
+
+extern float the_heap_pressure, the_heap_threshold;
+
 struct node;
 
 void node_heap_init(void);
+void node_heap_calibrate(void);		/* set threshold after gc */
 struct node *node_heap_alloc(size_t nslots);
 void node_heap_free(struct node *node);
 void print_heap_stats(void);
+void reset_heap_stats(void);
 
 #endif /* LARK_MLC_HEAP_H */

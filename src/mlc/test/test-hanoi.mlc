@@ -1,0 +1,7 @@
+#include "hanoi.mlc".
+
+#echo "Testing hanoi-discs".
+hanoi-discs (0).
+hanoi-discs (1).
+hanoi-discs (3).
+hanoi-discs (9).

@@ -22,31 +22,47 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
-#include <stdbool.h>
-
-enum prim_variety {
-	PRIM_INVALID,
-
-	PRIM_ADD, PRIM_SUB,
-	PRIM_MULT, PRIM_DIV,
-
-	PRIM_EQ, PRIM_NE,
-	PRIM_LT, PRIM_LTE,
-	PRIM_GT, PRIM_GTE,
-
-	PRIM_AND, PRIM_OR, PRIM_XOR,
-	PRIM_NOT,
-
-	PRIM_CAR, PRIM_CDR,
-	PRIM_ISNIL, PRIM_ISPAIR,
-
-} __attribute__ ((packed));
-
-extern const char *prim_name(enum prim_variety variety);
+enum prim_syntax {
+	PRIM_SYNTAX_INVALID,
+	PRIM_SYNTAX_ATOM,
+	PRIM_SYNTAX_FUNCTION,
+	PRIM_SYNTAX_OP1,
+	PRIM_SYNTAX_OP2,
+};
 
 struct node;
 
-extern bool prim_reducible(struct node *redex);
-extern struct node *prim_reduce(struct node *redex);
+struct prim {
+	unsigned variety;
+	enum prim_syntax syntax;
+	const char *name;
+	struct node *(*reduce)(unsigned variety, struct node *);
+};
+
+extern struct prim
+
+	/* arithmetic */
+	prim_add, prim_sub, prim_mult, prim_div,
+
+	/* equality and inequality */
+	prim_eq, prim_ne, prim_lt, prim_lte, prim_gt, prim_gte,
+
+	/* Boolean logic */
+	prim_and, prim_or, prim_xor, prim_not,
+
+	/* floating-point operations */
+	prim_is_integral,
+
+	/* string operations */
+	prim_concat,
+
+	/* cell operations */
+	prim_at, prim_cell, prim_fill, prim_find, prim_fuse,
+	prim_is_cell, prim_nelems,
+
+	/* list operations */
+	prim_car, prim_cdr, prim_is_nil, prim_is_pair,
+
+	prim_undefined, prim_panic;
 
 #endif /* LARK_MLC_PRIM_H */

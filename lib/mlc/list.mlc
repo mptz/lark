@@ -1,16 +1,16 @@
 |* Ordinary-function list operations, for when we want regular names
 |* instead of operators/primitives.
-cons	:= [x, y. [x | y]]
-car	:= [p. #0 p]
-cdr	:= [p. #1 p]
-nil	:= []
-is-nil	:= #is-nil
-is-pair	:= #is-pair
+cons	:= [x, y. [x | y]].
+car	:= [p. #0 p].
+cdr	:= [p. #1 p].
+nil	:= [].
+is-nil	:= $is-nil.
+is-pair	:= $is-pair.
 
 |* Basic list length (not using fold)
-basic-length-step := [self, list, accum.	\
-	[list; is-nil? accum | self (self, #1 list, accum + 1)]]
-basic-length := [list. basic-length-step (basic-length-step, list, 0)]
+basic-length-body := [length! list, accum.
+	[list; is-nil? accum | length (#1 list, accum + 1)]].
+basic-length := [list. basic-length-body (list, 0)].
 
 |* We don't yet have a fold which permits early exit
 |* Use [] as out-of-band value when n >= length of list
@@ -20,44 +20,49 @@ basic-length := [list. basic-length-step (basic-length-step, list, 0)]
 
 |* List fold and unfold, on which we base numerous other operations
 
-fold-step := [self, state, step, list.		\
-	[list; is-nil? state |			\
-		self (self, step (state, #0 list), step, #1 list)]]
-fold := [start, step, list. fold-step (fold-step, start, step, list)]
+|* The fold step function takes [state | elem] and returns state.
+fold := [fold! step, state, list.
+	[list; is-nil? state | fold (step, step (state, #0 list), #1 list)]].
 
-|* The unfold step function returns [done | [state | elem]]
+|* The unfold step function takes state and returns [done | state | elem]
 |* where:	'done' is nonzero iff we're done unfolding;
 |*		'state' is the new state;
-|*		'elem' is the eleemnt to add to the list.
-unfold-step := [self, state, step, list.			\
-	step (state) [result.					\
-		[#0 result? list |				\
-			self (self, #0 #1 result, step,		\
-			      [#1 #1 result | list])]]]
-unfold := [start, step. unfold-step (unfold-step, start, step, nil)]
+|*		'elem' is the element to add to the list.
+|* n.b. unfold current generates in tail-to-head order
+unfold-body := [unfold! step, state, list.
+	step (state) [result.
+		[$at (0, result)? list |
+			unfold (step, $at (1, result),
+				[$at (2, result) | list])]]].
+unfold := [step, start. unfold-body (step, start, nil)].
 
 |******************** List helpers using fold ********************
 
-length-step := [accum, _. accum + 1]
-length := [list. fold (0, length-step, list)]
+length := [list. fold ([accum, _. accum + 1], 0, list)].
 
-reverse-step := [accum, elem. cons (elem, accum)]
-reverse := [list. fold (nil, reverse-step, list)]
+sum := [list. fold ([accum, elem. accum + elem], 0, list)].
+
+product := [list. fold ([accum, elem. accum * elem], 1, list)].
+
+reverse-step := [accum, elem. [elem | accum]].
+reverse := [list. fold (reverse-step, nil, list)].
 
 |******************** List helpers using unfold ********************
 
 |* Making a list of constant values
-makelist := [n, k. unfold (n, [m. [m == 0 | [m - 1 | k]]])]
+makelist := [n, k. unfold ([m. [m == 0 | m - 1 | k]], n)].
 
 |* Iota (list of numbers 1..n)
-iota-step := [n. [n == 0 | [n - 1 | n]]]
-iota := [n. unfold (n, iota-step)]
+iota := [n. unfold ([m. [m == 0 | m - 1 | m]], n)].
 
 |******************** More list operations ********************
 
-append := [lh, lt. fold (lt, reverse-step, lh; reverse)]
+append := [lh, lt. fold (reverse-step, lt, lh; reverse)].
 
-map-step := [self, f, list, accum.		\
-	[list; is-nil? reverse (accum) |	\
-		self (self, f, #1 list, cons (f (#0 list), accum))]]
-map := [f, list. map-step (map-step, f, list, nil)]
+map-step := [self! f, list, accum.
+	[list; is-nil? reverse (accum) |
+		self (f, #1 list, cons (f (#0 list), accum))]].
+map := [f, list. map-step (f, list, nil)].
+
+|* Need number-of-elements primitive to do cell -> list
+|* cell-to-list := [c. unfold 

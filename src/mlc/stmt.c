@@ -27,10 +27,10 @@
 
 #include <util/message.h>
 
-#include "crumble.h"
 #include "env.h"
 #include "form.h"
 #include "heap.h"
+#include "flatten.h"
 #include "interpret.h"
 #include "mlc.h"
 #include "node.h"
@@ -39,7 +39,7 @@
 #include "resolve.h"
 #include "stmt.h"
 #include "term.h"
-#include "uncrumble.h"
+#include "unflatten.h"
 
 static void node_listing(const char *label, struct node *node)
 {
@@ -97,8 +97,8 @@ void stmt_list(struct form *form)
 		putchar('\n');
 	}
 
-	struct node *node = crumble(term);
-	node_listing("crum", node->prev);
+	struct node *node = flatten(term);
+	node_listing("flat", node->prev);
 	node_free(node);
 
 	fputs("==================================="
@@ -120,8 +120,12 @@ void stmt_reduce(struct form *form)
 		putchar('\n');
 	}
 
-	struct node *node = crumble(term);
-	node_listing("crum", node);
+	struct node *node = flatten(term);
+	node_listing("flat", node);
+
+	/* XXX should have option for this? */
+	reset_eval_stats();
+	reset_heap_stats();
 
 	struct timeval t0, t;
 	gettimeofday(&t0, NULL);
@@ -131,7 +135,7 @@ void stmt_reduce(struct form *form)
 
 	node_listing("eval", node);
 
-	term = uncrumble(node);
+	term = unflatten(node);
 	assert(term);
 	node_free(node);
 	node = NULL;
@@ -153,6 +157,7 @@ void stmt_reduce(struct form *form)
 	if (!quiet_setting) {
 		printf("dt: %.6fs\n", elapsed / 1000000.0);
 		print_eval_stats();
+		fflush(stdout);		/* XXX move up */
 		print_heap_stats();
 	}
 	fputs("==================================="

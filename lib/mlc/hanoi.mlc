@@ -1,0 +1,7 @@
+|* Various flavors of Towers of Hanoi solutions.
+
+fuse3 := [c1, c2, c3. $fuse (c1, $fuse (c2, c3))].
+
+hanoi-discs := [self! n.
+	let { prior := [n? self (n - 1) | []] }
+	fuse3 (prior, [n], prior)].

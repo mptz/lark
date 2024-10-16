@@ -1,5 +1,5 @@
-#ifndef LARK_MLC_UNCRUMBLE_H
-#define LARK_MLC_UNCRUMBLE_H
+#ifndef LARK_MLC_UNFLATTEN_H
+#define LARK_MLC_UNFLATTEN_H
 /*
  * Copyright (c) 2009-2023 Michael P. Touloumtzis.
  *
@@ -25,6 +25,6 @@
 struct node;
 struct term;
 
-extern struct term *uncrumble(const struct node *node);
+extern struct term *unflatten(const struct node *node);
 
-#endif /* LARK_MLC_UNCRUMBLE_H */
+#endif /* LARK_MLC_UNFLATTEN_H */

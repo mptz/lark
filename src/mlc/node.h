@@ -23,6 +23,7 @@
  */
 
 #include <stdbool.h>
+#include <stddef.h>
 
 #include <util/symtab.h>
 
@@ -41,7 +42,7 @@ enum slot_variety {
 	SLOT_NUM,	/* floating-point number */
 	SLOT_PARAM,	/* formal parameter to abstraction */
 	SLOT_PRIM,	/* primitive (built-in) function */
-	SLOT_SELF,	/* self-reference for recursive function */
+	SLOT_STRING,	/* nul-terminated string */
 	SLOT_SUBST,	/* explicit substitution, as node pointer */
 } __attribute__ ((packed));
 
@@ -50,16 +51,13 @@ struct slot {
 	union {
 		struct { int up, across; } bv;
 		symbol_mt name;		/* free vars & formal params */
-		unsigned prim;
 		double num;
+		const struct prim *prim;
 		struct node *subst;
+		const char *str;
 		struct term *term;
 	};
 };
-
-static inline bool slot_is_name(const struct slot slot)
-	{ return slot.variety == SLOT_PARAM ||
-		 slot.variety == SLOT_SELF; }
 
 /*
  * We essentially support three types of references: bound variables,
@@ -84,13 +82,14 @@ enum node_variety {
 	NODE_APP,
 	NODE_CELL,
 	NODE_FIX,
+	NODE_LET,
 	NODE_TEST,
 	NODE_VAL,
 	NODE_VAR,
 } __attribute__ ((packed));
 
 /*
- * An n-ary node in the crumbled (semicompiled) representation of our
+ * An n-ary node in the flattened (semicompiled) representation of our
  * calculus terms.  Whereas the classic lambda calculus has three types
  * of nodes (abstraction, application, and variable) we fundamentally
  * have only two, which are distinguished not by variant tags/enums but
@@ -98,9 +97,7 @@ enum node_variety {
  *
  * An *abstraction* node contains:
  *	slots[0]	SLOT_BODY	function body
- *	slots[1]	SLOT_SELF	self-reference parameter OR
- *			SLOT_NULL	nothing (non-recursive)
- *	slots[2..]	SLOT_PARAM	ordinary abstraction parameters
+ *	slots[1..]	SLOT_PARAM	abstraction parameters
  *
  * There is always at least one parameter, since 0-ary abstractions
  * collapse to their bodies (we don't support substitutionless "thunks");
@@ -134,6 +131,10 @@ struct node_chain {
 
 static inline bool node_is_abs(const struct node *node)
 	{ return node->variety == NODE_ABS || node->variety == NODE_FIX; }
+static inline bool node_is_binder(const struct node *node)
+	{ return node->variety == NODE_ABS ||
+		 node->variety == NODE_FIX ||
+		 node->variety == NODE_LET; }
 static inline bool node_is_prim(const struct node *node)
 	{ return node->slots[0].variety == SLOT_PRIM; }
 static inline struct node *node_abs_body(const struct node *abs)
@@ -149,16 +150,16 @@ static inline void node_remove(struct node *node)
 
 struct node *NodeAbs(struct node *prev, int depth, struct node *body,
 		     size_t nparams, symbol_mt *params);
-struct node *NodeAbsCopy(struct node *prev, int depth, struct node *body,
-			 struct node *src);	/* src for params only */
 struct node *NodeApp(struct node *prev, int depth, size_t nargs);
 struct node *NodeBoundVar(struct node *prev, int depth, int up, int across);
 struct node *NodeCell(struct node *prev, int depth, size_t n);
 struct node *NodeFreeVar(struct node *prev, int depth, struct term *var);
 struct node *NodeGeneric(struct node *prev, int depth, size_t nslots);
+struct node *NodeLet(struct node *prev, int depth, size_t ndefs);
 struct node *NodeNum(struct node *prev, int depth, double num);
-struct node *NodePrim(struct node *prev, int depth, unsigned prim);
+struct node *NodePrim(struct node *prev, int depth, const struct prim *prim);
 struct node *NodeSentinel(struct node *next, struct node *prev, int depth);
+struct node *NodeString(struct node *prev, int depth, const char *str);
 struct node *NodeTest(struct node *prev, int depth);
 
 extern int node_abs_depth(const struct node *node);

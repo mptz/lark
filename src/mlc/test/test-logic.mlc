@@ -1,11 +1,11 @@
-#include "church.mlc"
+#include "church.mlc".
 
-id (3)
-id (id)
-id (apple)
-and (true, true)
-and (true, false)
-or (true, false)
-or (false, false)
-and (true, true); not
-or (false, false); not
+id (3).
+id (id).
+id (apple).
+and (true, true).
+and (true, false).
+or (true, false).
+or (false, false).
+and (true, true); not.
+or (false, false); not.

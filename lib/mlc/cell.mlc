@@ -1,0 +1,31 @@
+|* Cell utility functions
+
+|* friendly names for primitives
+at := $at.
+cell := $cell.
+fill := $fill.
+find := $find.
+fuse := $fuse.
+is-cell := $is-cell.
+
+|* Boolean test version of $find
+found := [x, c. $find (x, c) >= 0].
+
+|* the cell equivalent of fold for lists
+gather := [fn, init, cell.
+	let { nth := [i. $at (i, cell)] }
+	let { step := [step! state, i.
+		[i < # cell? step (fn (state, i; nth), i + 1) | state]] }
+	step (init, 0)].
+
+|* the cell equivalent of map for lists
+morph := [fn, src.  fill (# src, [i. at (i, src); fn])].
+
+|* the cell equivalent of reverse for lists
+reverse-cell := [cell.  let { last := # cell - 1 }
+	fill (# cell, [i. at (last - i, cell)])].
+
+|* mapping, but the function is given index as well as cell contents
+morph-with-index := [fn, src.
+	let { call-fn := [i. fn (i, at (i, src))] }
+	fill (# src, call-fn)].

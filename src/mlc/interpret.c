@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009-2022 Michael P. Touloumtzis.
+ * Copyright (c) 2009-2024 Michael P. Touloumtzis.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -82,10 +82,10 @@ static void interpret_nat(const struct term *term)
 {
 	/* Church numerals start with two unary abstractions */
 	if (term->variety != TERM_ABS ||
-	    term->abs.nformals != 1 ||
+	    term->abs.nformals != 2 ||
 	    term->abs.nbodies != 1 ||
 	    (term = term->abs.bodies[0], term->variety != TERM_ABS) ||
-	    term->abs.nformals != 1 ||
+	    term->abs.nformals != 2 ||
 	    term->abs.nbodies != 1)
 		return;
 	term = term->abs.bodies[0];

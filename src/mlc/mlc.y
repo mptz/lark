@@ -37,61 +37,65 @@
 
 %union {
 	struct form *form;
-	const char *str;
-	int prim;
+	const struct prim *prim;
+	const char *huid;
 }
 
 %{
-extern int mlc_yylex(YYSTYPE *valp, void *scanner);
-static int mlc_yyerror(mlc_yyscan_t scanner, const char *s);
+extern int mlc_yylex(YYSTYPE *valp, YYLTYPE *locp, void *scanner);
+static int mlc_yyerror(YYLTYPE *locp, mlc_yyscan_t scanner, const char *s);
 %}
 
 %define api.pure
 %define parse.error verbose
+%locations
 %lex-param {void *scanner}
 %parse-param {mlc_yyscan_t scanner}
 
-%token ASSIGN
 %token CMD_ECHO
-%token END_OF_LINE
+%token DEF
 %token ENV_DUMP
 %token INCLUDE
 %token LIST
 
-%nonassoc OPEQ OPNE OPLT OPLTE OPGT OPGTE
-%left '+' '-'
-%left '*' '/'
-%precedence OPCAR OPCDR
+%nonassoc OP2C			/* binary comparison operators */
+%left OP2A			/* binary additive operators */
+%left OP2M			/* binary multiplicative operators */
+%precedence OP1			/* unary operators */
+%type <prim> OP2C OP2A OP2M OP1
 
+%token <huid> HUID
 %token <prim> PRIM
-%token <str> STRING
-%token <form> NUM VARIABLE
+%token <form> NUM STRING VARIABLE
+%token <form> LET SECTION
 
 %type <form> term terms seq expr factor arith
+%type <form> let assigns assign
 %type <form> app app1
-%type <form> base pack abs fix nil pair params prim test var
+%type <form> base pack abs fix params
+%type <form> cell elems prim string test var keyword blank
 
 %%
 
 input	: %empty
-	| stmt			/* for REPL, one statement w/o newline */
+	| stmt			/* for REPL, one statement w/o terminator */
 	| stmts;		/* for noninteractive, parse multiple stmts
-				   which must each be newline-terminated */
+				   which must each be terminated */
 
-stmts	: END_OF_LINE
-	| stmt END_OF_LINE
-	| stmts END_OF_LINE
-	| stmts stmt END_OF_LINE
+stmts	: '.'
+	| stmt '.'
+	| stmts stmt '.'
 	;
 
-stmt	: term			{ stmt_reduce($1); form_free($1); }
+stmt	: term 			{ stmt_reduce($1); form_free($1); }
 	| CMD_ECHO		{ putchar('\n'); }
-	| CMD_ECHO STRING	{ fputs($2, stdout); putchar('\n'); }
+	| CMD_ECHO STRING	{ fputs($2->str, stdout); putchar('\n'); }
 	| ENV_DUMP		{ env_dump(NULL); }
-	| ENV_DUMP STRING	{ env_dump($2); }
-	| INCLUDE STRING	{ if (parse_include($2)) YYERROR; }
-	| LIST term		{ stmt_list($2); }
-	| VARIABLE ASSIGN term	{ stmt_define($1->var.name, $3); }
+	| ENV_DUMP STRING	{ env_dump($2->str); }
+	| INCLUDE STRING	{ if (parse_include($2->str)) YYERROR; }
+	| LIST term 		{ stmt_list($2); }
+	| SECTION HUID		{ printf("section: #%s.\n", $2); }
+	| var DEF term 		{ stmt_define($1->var.name, $3); }
 	;
 
 /*
@@ -124,29 +128,31 @@ terms	: term
 seq	: expr
 	| seq ';' expr		{ $$ = FormApp($3, $1, FORM_SYNTAX_POSTFIX); };
 
-expr	: arith;
+expr	: arith | let;
+let	: LET '{' assigns '}' expr		{ $$ = FormLet($3, $5); }
+	| LET '{' assigns '.' '}' expr		{ $$ = FormLet($3, $6); };
+assigns	: assign | assigns '.' assign		{ $3->prev = $1; $$ = $3; };
+assign	: var DEF term				{ $$ = FormDef($1, $3); };
 
-arith	: arith OPEQ arith	{ $$ = FormOp2(PRIM_EQ, $1, $3); }
-	| arith OPNE arith	{ $$ = FormOp2(PRIM_NE, $1, $3); }
-	| arith OPLT arith	{ $$ = FormOp2(PRIM_LT, $1, $3); }
-	| arith OPLTE arith	{ $$ = FormOp2(PRIM_LTE, $1, $3); }
-	| arith OPGT arith	{ $$ = FormOp2(PRIM_GT, $1, $3); }
-	| arith OPGTE arith	{ $$ = FormOp2(PRIM_GTE, $1, $3); }
-	| arith '+' arith	{ $$ = FormOp2(PRIM_ADD, $1, $3); }
-	| arith '-' arith	{ $$ = FormOp2(PRIM_SUB, $1, $3); }
-	| arith '*' arith	{ $$ = FormOp2(PRIM_MULT, $1, $3); }
-	| arith '/' arith	{ $$ = FormOp2(PRIM_DIV, $1, $3); }
-	| OPCAR arith		{ $$ = FormOp1(PRIM_CAR, $2); }
-	| OPCDR arith		{ $$ = FormOp1(PRIM_CDR, $2); }
+arith	: arith OP2C arith	{ $$ = FormOp2($2, $1, $3); }
+	| arith OP2A arith	{ $$ = FormOp2($2, $1, $3); }
+	| arith OP2M arith	{ $$ = FormOp2($2, $1, $3); }
+	| OP1 arith		{ $$ = FormOp1($1, $2); }
+	| '(' OP2C ')'		{ $$ = FormPrim($2, &@2); }
+	| '(' OP2A ')'		{ $$ = FormPrim($2, &@2); }
+	| '(' OP2M ')'		{ $$ = FormPrim($2, &@2); }
+	| '(' OP1 ')'		{ $$ = FormPrim($2, &@2); }
 	| factor;
 
-factor	: abs | fix | nil | pair | test | app | base;
+factor	: abs | fix | cell | test | app | base;
 
 abs	: '[' params '.' terms ']'		{ $$ = FormAbs($2, $4); };
 fix	: '[' var '!' params '.' terms ']'	{ $$ = FormFix($2, $4, $6); };
 params	: var | params ',' var			{ $3->prev = $1; $$ = $3; };
-nil	: '[' ']'				{ $$ = FormNil(); };
-pair	: '[' term '|' term ']'			{ $$ = FormPair($2, $4); };
+cell	: '[' ']'				{ $$ = FormCell(NULL); }
+	| '[' elems ']'				{ $$ = FormCell($2); };
+elems	: term | elems '|' term			{ $3->prev = $1; $$ = $3; };
+
 test	: '[' term '?' terms '|' terms ']'	{ $$ = FormTest($2, $4, $6); };
 
 app	: app1 abs		{ $$ = FormApp($2, $1, FORM_SYNTAX_POSTFIX); }
@@ -166,16 +172,23 @@ pack	: '(' ')'		{ $$ = NULL; }
 	| '(' terms ')'		{ $$ = $2; }
 	| '(' terms ',' ')'	{ $$ = $2; }
 
-base	: NUM | prim | var | pack;
+base	: NUM | string | prim | var | pack;
 
-prim	: PRIM			{ $$ = FormPrim($1); };
-var	: VARIABLE | '_'	{ $$ = FormVar(the_placeholder_symbol); };
+string	: STRING | string STRING	{ $$ = FormStringConcat($1, $2); };
+prim	: PRIM			{ $$ = FormPrim($1, &@1); };
+var	: VARIABLE | keyword | blank;
+keyword	: LET | SECTION;
+blank	: '_'			{ $$ = FormVar(the_placeholder_symbol); };
 
 %%
 /* Additional C code section */
 
-static int mlc_yyerror(void *scanner, const char *s)
+static int mlc_yyerror(YYLTYPE *locp, void *scanner, const char *s)
 {
-	fprintf(stderr, "Parse error: %s\n", s);
+	if (locp->first_line == locp->last_line)
+		fprintf(stderr, "Parse error: %d: %s\n", locp->first_line, s);
+	else
+		fprintf(stderr, "Parse error: %d-%d: %s\n",
+			locp->first_line, locp->last_line, s);
 	return 0;
 }

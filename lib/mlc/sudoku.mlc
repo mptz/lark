@@ -1,0 +1,422 @@
+|*
+|* Copyright (c) 2009-2024 Michael P. Touloumtzis.
+|*
+|* Permission is hereby granted, free of charge, to any person obtaining a
+|* copy of this software and associated documentation files (the "Software"),
+|* to deal in the Software without restriction, including without limitation
+|* the rights to use, copy, modify, merge, publish, distribute, sublicense,
+|* and/or sell copies of the Software, and to permit persons to whom the
+|* Software is furnished to do so, subject to the following conditions:
+|*
+|* The above copyright notice and this permission notice shall be included in
+|* all copies or substantial portions of the Software.
+|*
+|* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+|* OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+|* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+|* AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+|* LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+|* FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+|* DEALINGS IN THE SOFTWARE.
+|*
+
+|*
+|* Sudoku solver in MLC.
+|*
+
+|*
+|* A square in the grid can be in one of the following states:
+|*
+|* - Solved (exactly one possibility)
+|* - Underconstrained (more than one possibility)
+|* - Overconstrained (no possibilities)
+|*
+|* Sudoku puzzles use digits 1..9, but only as arbitrary distinguishable
+|* sigils--they don't participate in any arithmetic operations.  So we
+|* could replace them with letters, symbols, or Lucky Charms marshmallows
+|* to create isomorphic puzzles.
+|*
+|* In practice we replace the digits 1..N with the first N prime numbers.
+|* This allows us to store not only individual values, but superpositions
+|* of possible values (stored as the product of the possible primes) in
+|* one natural number per square.
+|* 
+|* The value 1 indicates the square is overconstrained i.e. unsolvable.
+|*
+|* An 'unconstrained' square has all possibilities, so its value is the
+|* product of all N primes.  This is initial state for non-clue squares.
+|*
+
+first-prime := 2.
+last-prime := 23.
+first-nine-primes := [2 | 3 | 5 | 7 | 11 | 13 | 17 | 19 | 23].
+prime-to-digit-key :=
+	[ 0 | 0 | 1 | 2 | 0 | 3 | 0 | 4 | 0 | 0 | 0 | 5 |
+	  0 | 6 | 0 | 0 | 0 | 7 | 0 | 8 | 0 | 0 | 0 | 9 ].
+
+digit-to-prime := [d. at (d - 1, first-nine-primes)].
+prime-to-digit := [p. at (p, prime-to-digit-key)].
+
+cell-product := [c. gather ((*), 1, c)].
+unconstrained := first-nine-primes; cell-product.
+
+|*
+|* Build a square containing multiple digits; used for testing as when
+|* we build a real board, squares start single-valued or unconstrained.
+|*
+square-containing :=
+	let { pmult := [p, d. p * digit-to-prime (d)] }
+	[digits. gather (pmult, 1, digits)].
+
+|*
+|* The fundamental solving operation is 'constraining' a square.
+|* Given a square's current value and a value, remove that value from
+|* the square's possible value.  There are 4 outcomes:
+|*
+|* (1) Square is unchanged; the given value was already impossible.
+|* (2) Square is still underconstrained, but with one fewer possibility.
+|* (3) Square is newly solved: we removed the penultimate possibility.
+|* (4) Square is newly overconstrained: we removed the final possibility.
+|*
+|* For outcome (2) we'll want to replace the square's contents with
+|* the now reduced possibilities (replacing is OK for 1 as well; it's
+|* a no-op).  For outcome (3) (transition from unsolved to solved) we
+|* have a new constraint to propagate to the square's peers.  For (4),
+|* we've identified an earlier inconsistency and must backtrack.
+|*
+
+constrain-square := [square, value.
+	let { without-digit := square / value }
+	[without-digit; $is-integral? without-digit | square]].
+
+square-solution :=
+	[square. [square <= last-prime? at (square, prime-to-digit-key) | 0]].
+
+|*
+|* What are the possible values in a square?  Essentially prime factoring.
+|* Needed for hypothesis testing.
+|*
+
+square-possibilities := [square.
+	let { try := [accum, prime.
+		[$is-integral (square / prime)? cons (prime, accum) | accum]]. }
+	gather (try, [], first-nine-primes)].
+
+|* Grid representation.
+
+all-digits := [1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9].
+num-digits := # all-digits.
+grid-size := num-digits * num-digits.
+
+digit-to-string-key :=
+	[" " | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9"].
+digit-to-string := [d. at (d, digit-to-string-key)].
+
+impossible-grid :=
+	[ 5 | 3 | 0 | 0 | 7 | 0 | 0 | 0 | 0
+	| 6 | 0 | 0 | 1 | 9 | 5 | 0 | 0 | 0
+	| 0 | 9 | 8 | 0 | 0 | 0 | 0 | 6 | 0
+
+	| 8 | 0 | 0 | 0 | 6 | 0 | 0 | 0 | 3
+	| 4 | 0 | 0 | 8 | 0 | 3 | 0 | 0 | 1
+	| 7 | 0 | 0 | 0 | 2 | 0 | 1 | 0 | 6	|* note extra 1
+
+	| 0 | 6 | 0 | 0 | 0 | 0 | 2 | 8 | 0
+	| 0 | 0 | 0 | 4 | 1 | 9 | 0 | 0 | 5
+	| 0 | 0 | 0 | 0 | 8 | 0 | 0 | 7 | 9 ].
+
+grid-row-indexes := [
+	[  0 |  1 |  2 |  3 |  4 |  5 |  6 |  7 |  8 ] |
+	[  9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 ] |
+	[ 18 | 19 | 20 | 21 | 22 | 23 | 24 | 25 | 26 ] |
+
+	[ 27 | 28 | 29 | 30 | 31 | 32 | 33 | 34 | 35 ] |
+	[ 36 | 37 | 38 | 39 | 40 | 41 | 42 | 43 | 44 ] |
+	[ 45 | 46 | 47 | 48 | 49 | 50 | 51 | 52 | 53 ] |
+
+	[ 54 | 55 | 56 | 57 | 58 | 59 | 60 | 61 | 62 ] |
+	[ 63 | 64 | 65 | 66 | 67 | 68 | 69 | 70 | 71 ] |
+	[ 72 | 73 | 74 | 75 | 76 | 77 | 78 | 79 | 80 ] ].
+
+grid-col-indexes := [
+	[  0 |  9 | 18 | 27 | 36 | 45 | 54 | 63 | 72 ] |
+	[  1 | 10 | 19 | 28 | 37 | 46 | 55 | 64 | 73 ] |
+	[  2 | 11 | 20 | 29 | 38 | 47 | 56 | 65 | 74 ] |
+
+	[  3 | 12 | 21 | 30 | 39 | 48 | 57 | 66 | 75 ] |
+	[  4 | 13 | 22 | 31 | 40 | 49 | 58 | 67 | 76 ] |
+	[  5 | 14 | 23 | 32 | 41 | 50 | 59 | 68 | 77 ] |
+
+	[  6 | 15 | 24 | 33 | 42 | 51 | 60 | 69 | 78 ] |
+	[  7 | 16 | 25 | 34 | 43 | 52 | 61 | 70 | 79 ] |
+	[  8 | 17 | 26 | 35 | 44 | 53 | 62 | 71 | 80 ] ].
+
+grid-box-indexes := [
+	[  0 |  1 |  2 |  9 | 10 | 11 | 18 | 19 | 20 ] |
+	[  3 |  4 |  5 | 12 | 13 | 14 | 21 | 22 | 23 ] |
+	[  6 |  7 |  8 | 15 | 16 | 17 | 24 | 25 | 26 ] |
+
+	[ 27 | 28 | 29 | 36 | 37 | 38 | 45 | 46 | 47 ] |
+	[ 30 | 31 | 32 | 39 | 40 | 41 | 48 | 49 | 50 ] |
+	[ 33 | 34 | 35 | 42 | 43 | 44 | 51 | 52 | 53 ] |
+
+	[ 54 | 55 | 56 | 63 | 64 | 65 | 72 | 73 | 74 ] |
+	[ 57 | 58 | 59 | 66 | 67 | 68 | 75 | 76 | 77 ] |
+	[ 60 | 61 | 62 | 69 | 70 | 71 | 78 | 79 | 80 ] ].
+
+grid-groups := fuse (grid-row-indexes,
+	       fuse (grid-col-indexes,
+		     grid-box-indexes)).
+
+gather-peers := [i.
+	let { containing-i := [a, c. [found (i, c)? fuse (a, c) | a]] }
+	gather (containing-i, [], grid-groups)].
+
+peer-key := fill (grid-size, gather-peers).
+
+peer-grid := [i, s.
+	let { peers := at (i, peer-key) }
+	let { peer-but-not-self :=
+		[j. [$and (i <> j, found (j, peers))? s | unconstrained]] }
+	fill (grid-size, peer-but-not-self)].
+
+grid-to-string := [grid.
+	let { digit-grid := morph (square-solution, grid) }
+	let { hline := "\n+---+---+---+---+---+---+---+---+---+\n". }
+	let {
+
+	xform := [state, elem.
+		let { str := #0 state.  i := #1 state. }
+		let { eol := $is-integral ((i + 1) / 9). }
+		let { sep := [eol? " |" ++ hline | " "]. }
+		[str ++ "| " ++ digit-to-string (elem) ++ sep | i + 1]].
+
+	}
+	#0 gather (xform, ["grid:" ++ hline | 0], digit-grid)].
+
+|* Ingesting puzzles
+initial-value := [square. [square? digit-to-prime (square) | unconstrained]].
+initial-grid := [source-grid. morph (initial-value, source-grid)].
+empty-grid := cell (grid-size, 0); initial-grid.
+
+|* Given two grids grid0 and grid1, return a list of peer grids for squares
+|* solved in grid1 but not in grid0.  We'll apply these as constraints in
+|* the next solution round.
+|*
+diff-grids := [grid0, grid1.
+	let {
+
+	diff-squares := [i, accum.
+		let { square1 := at (i, grid1) }
+		let { solution0 := at (i, grid0); square-solution.
+		      solution1 :=       square1; square-solution. }
+		[$and (solution1, solution0; $not)?
+			cons (peer-grid (i, square1), accum) | accum]].
+
+	} let {
+	step := [self! i, accum.
+		[i < grid-size? self (i + 1, diff-squares(i, accum)) | accum]]
+	}
+	step (0, nil)].
+initial-constraints := [grid. diff-grids (empty-grid, grid)].
+
+|* The heart of constraint propagation.
+constrained-grid := [source-grid, constraint-grids.
+	let {
+
+	|* apply-constraints successively applies all constraints in
+	|* 'grids' (a list of constraint grids) to the given square,
+	|* based on the place 'i'.
+	|*
+	|* The return value is one of:
+	|*	- A number, if the square is ambiguous (not solved).
+	|*	  This is simply the current square value.
+	|*	- A pair [ number | digit ] if the square is solved.
+	|*	- A string: place is unsatisfiable (overconstrained).
+	|* XXX update above.
+	|*
+	apply-constraints := [self! i, square, grids.
+
+		|* If grids is nil, we made it through all constraints,
+		|* so we must be either solved or underconstrained.
+		|*
+		[grids; is-nil? square |
+
+		let { value := at (i, grids; car).  remain := grids; cdr. }
+		[value == unconstrained? self (i, square, remain) |
+			let { x := constrain-square (square, value) }
+			[x < first-prime? 1 | self (i, x, remain)]]]]
+
+	} let { xform := [i, e. apply-constraints (i, e, constraint-grids)] }
+	morph-with-index (xform, source-grid)].
+
+constrain := [self! grid, constraints.
+	let { new-grid := constrained-grid (grid, constraints) }
+	let { new-constraints := diff-grids (grid, new-grid) }
+	[new-constraints; is-nil? new-grid | self (new-grid, new-constraints)]].
+
+|* Analysis outcomes:
+|* - Solved (represented by grid-size)
+|* - Not solved (represented by index of an ambiguous square with the
+|*   fewest possibilities).
+|* - Impossible (represented by -1)
+|* Even if there are unsolved squares, we traverse the whole grid looking
+|* for impossible ones.
+|*
+analyze-grid := [grid.
+	let { test := [self! i, j, s.
+		[i == grid-size? j |
+		let { square := at (i, grid) }
+		[square < first-prime? -1 |
+			let { np := square-possibilities (square); length }
+			[$and (np > 1, np < s)?
+				self (i + 1, i, np) |
+				self (i + 1, j, s)]]]] }
+	test (0, grid-size, num-digits + 1)].
+
+guess-grid := [i, n, grid.
+	let { xform := [j, e. [i == j? n | e]] }
+	morph-with-index (xform, grid)].
+
+constrain-and-guess := [constrain-and-guess! grid0, constraints0.
+
+	let { do-guess := [i, grid.
+		let { try-each := [try-each! guesses.
+			[guesses; is-nil? [] |
+			let { hypothesis := guess-grid (i, guesses; car, grid) }
+			let { constraints := diff-grids (grid, hypothesis) }
+			let { recur :=
+				constrain-and-guess (hypothesis, constraints) }
+			[recur; is-nil? guesses; cdr; try-each | recur]]] }
+		let { possibilities := at (i, grid); square-possibilities }
+		try-each (possibilities)] }
+
+	let { do-analyze := [grid.
+		let { analysis := grid; analyze-grid }
+		[analysis < 0? [] |
+			[analysis == grid-size? grid |
+				do-guess (analysis, grid)]]] }
+
+	do-analyze (constrain (grid0, constraints0))].
+
+try-solve := [digit-grid.
+	let { prime-grid := digit-grid; initial-grid }
+	constrain-and-guess (prime-grid, prime-grid; initial-constraints)].
+
+|* for copy & paste
+blank-grid :=
+	[ 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0
+	| 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0
+	| 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0
+
+	| 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0
+	| 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0
+	| 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0
+
+	| 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0
+	| 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0
+	| 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 ].
+
+easy-grid :=
+	[ 0 | 0 | 3 | 0 | 2 | 0 | 6 | 0 | 0
+	| 9 | 0 | 0 | 3 | 0 | 5 | 0 | 0 | 1
+	| 0 | 0 | 1 | 8 | 0 | 6 | 4 | 0 | 0
+
+	| 0 | 0 | 8 | 1 | 0 | 2 | 9 | 0 | 0
+	| 7 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 8
+	| 0 | 0 | 6 | 7 | 0 | 8 | 2 | 0 | 0
+
+	| 0 | 0 | 2 | 6 | 0 | 9 | 5 | 0 | 0
+	| 8 | 0 | 0 | 2 | 0 | 3 | 0 | 0 | 9
+	| 0 | 0 | 5 | 0 | 1 | 0 | 3 | 0 | 0 ].
+
+wikipedia-grid :=
+	[ 5 | 3 | 0 | 0 | 7 | 0 | 0 | 0 | 0
+	| 6 | 0 | 0 | 1 | 9 | 5 | 0 | 0 | 0
+	| 0 | 9 | 8 | 0 | 0 | 0 | 0 | 6 | 0
+
+	| 8 | 0 | 0 | 0 | 6 | 0 | 0 | 0 | 3
+	| 4 | 0 | 0 | 8 | 0 | 3 | 0 | 0 | 1
+	| 7 | 0 | 0 | 0 | 2 | 0 | 0 | 0 | 6
+
+	| 0 | 6 | 0 | 0 | 0 | 0 | 2 | 8 | 0
+	| 0 | 0 | 0 | 4 | 1 | 9 | 0 | 0 | 5
+	| 0 | 0 | 0 | 0 | 8 | 0 | 0 | 7 | 9 ].
+
+inkala-2006-grid :=
+	[ 8 | 5 | 0 | 0 | 0 | 2 | 4 | 0 | 0
+	| 7 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 9
+	| 0 | 0 | 4 | 0 | 0 | 0 | 0 | 0 | 0
+
+	| 0 | 0 | 0 | 1 | 0 | 7 | 0 | 0 | 2
+	| 3 | 0 | 5 | 0 | 0 | 0 | 9 | 0 | 0
+	| 0 | 4 | 0 | 0 | 0 | 0 | 0 | 0 | 0
+
+	| 0 | 0 | 0 | 0 | 8 | 0 | 0 | 7 | 0
+	| 0 | 1 | 7 | 0 | 0 | 0 | 0 | 0 | 0
+	| 0 | 0 | 0 | 0 | 3 | 6 | 0 | 4 | 0 ].
+
+inkala-2010-grid :=
+	[ 0 | 0 | 5 | 3 | 0 | 0 | 0 | 0 | 0
+	| 8 | 0 | 0 | 0 | 0 | 0 | 0 | 2 | 0
+	| 0 | 7 | 0 | 0 | 1 | 0 | 5 | 0 | 0
+
+	| 4 | 0 | 0 | 0 | 0 | 5 | 3 | 0 | 0
+	| 0 | 1 | 0 | 0 | 7 | 0 | 0 | 0 | 6
+	| 0 | 0 | 3 | 2 | 0 | 0 | 0 | 8 | 0
+
+	| 0 | 6 | 0 | 5 | 0 | 0 | 0 | 0 | 9
+	| 0 | 0 | 4 | 0 | 0 | 0 | 0 | 3 | 0
+	| 0 | 0 | 0 | 0 | 0 | 9 | 7 | 0 | 0 ].
+
+norvig-grid :=
+	[ 4 | 0 | 0 | 0 | 0 | 0 | 8 | 0 | 5
+	| 0 | 3 | 0 | 0 | 0 | 0 | 0 | 0 | 0
+	| 0 | 0 | 0 | 7 | 0 | 0 | 0 | 0 | 0
+
+	| 0 | 2 | 0 | 0 | 0 | 0 | 0 | 6 | 0
+	| 0 | 0 | 0 | 0 | 8 | 0 | 4 | 0 | 0
+	| 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0
+
+	| 0 | 0 | 0 | 6 | 0 | 3 | 0 | 7 | 0
+	| 5 | 0 | 0 | 2 | 0 | 0 | 0 | 0 | 0
+	| 1 | 0 | 4 | 0 | 0 | 0 | 0 | 0 | 0 ].
+
+norvig-2-grid :=
+	[ 4 | 0 | 0 | 0 | 0 | 0 | 8 | 0 | 5
+	| 0 | 3 | 0 | 0 | 0 | 0 | 0 | 0 | 0
+	| 0 | 0 | 0 | 7 | 0 | 0 | 0 | 0 | 0
+
+	| 0 | 2 | 0 | 0 | 0 | 0 | 0 | 6 | 0
+	| 0 | 0 | 0 | 0 | 8 | 0 | 4 | 0 | 0
+	| 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0
+
+	| 0 | 0 | 0 | 6 | 0 | 3 | 0 | 7 | 0
+	| 5 | 0 | 0 | 2 | 0 | 0 | 0 | 0 | 0
+	| 1 | 0 | 4 | 0 | 0 | 0 | 0 | 0 | 0 ].
+
+nyt-medium-grid :=
+	[ 0 | 7 | 0 | 1 | 0 | 0 | 0 | 0 | 6
+	| 0 | 5 | 0 | 2 | 0 | 0 | 0 | 0 | 3
+	| 4 | 0 | 2 | 0 | 0 | 0 | 0 | 0 | 0
+
+	| 1 | 0 | 3 | 0 | 5 | 0 | 0 | 0 | 0
+	| 0 | 0 | 9 | 6 | 0 | 7 | 0 | 0 | 0
+	| 5 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0
+
+	| 0 | 0 | 0 | 0 | 0 | 2 | 7 | 5 | 9
+	| 0 | 0 | 0 | 9 | 0 | 0 | 0 | 0 | 8
+	| 0 | 0 | 0 | 0 | 3 | 0 | 2 | 0 | 0 ].
+
+reddit-hard-grid :=
+	[ 0 | 0 | 0 | 9 | 0 | 0 | 1 | 0 | 2
+	| 7 | 0 | 0 | 3 | 0 | 0 | 6 | 0 | 0
+	| 0 | 0 | 2 | 0 | 0 | 0 | 0 | 3 | 0
+
+	| 9 | 0 | 0 | 0 | 0 | 8 | 7 | 0 | 0
+	| 3 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 9
+	| 0 | 0 | 6 | 5 | 0 | 0 | 0 | 0 | 1
+
+	| 0 | 1 | 0 | 0 | 0 | 0 | 4 | 0 | 0
+	| 0 | 0 | 4 | 0 | 0 | 9 | 0 | 0 | 6
+	| 8 | 0 | 3 | 0 | 0 | 6 | 0 | 0 | 0 ].

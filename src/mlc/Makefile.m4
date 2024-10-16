@@ -1,7 +1,8 @@
-make_binary(mlc, beta.c crumble.c env.c form.c heap.c interpret.c
+make_binary(mlc, beta.c env.c flatten.c form.c heap.c interpret.c
 		 memloc.c mlc.c mlc.l mlc.y
-		 node.c parse.c prim.c readback.c reduce.c
-		 resolve.c stmt.c term.c uncrumble.c, util, readline)
+		 node.c num.c parse.c prim.c readback.c reduce.c
+		 resolve.c stmt.c subst.c
+		 term.c unflatten.c, util, readline)
 
 export MLC_INCLUDE := lib/mlc
 

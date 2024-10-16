@@ -21,18 +21,21 @@
  */
 
 #include <assert.h>
+#include <math.h>
 #include <stdlib.h>
 
 #include <util/memutil.h>
 #include <util/message.h>
+#include <util/symtab.h>
+#include <util/wordtab.h>
 
 #include "node.h"
 #include "term.h"
-#include "uncrumble.h"
+#include "unflatten.h"
 
 /*
- * Uncrumbling is the opposite of crumbling: reading back a tree from
- * the flattened lists of explicit substitutions.  This undoes sharing,
+ * Unflattening is the opposite of flattening: reading back a tree from
+ * the linear lists of explicit substitutions.  This undoes sharing,
  * which can drastically expand some terms (exponentially, in the worst
  * case) but yields tractable expansion for most terms in practical use.
  *
@@ -64,18 +67,33 @@
 
 struct context {
 	const struct context *outer;
-	const struct node *abs;
+	symbol_mt *formals;
+	size_t nformals;
 };
 
 static symbol_mt name_lookup(int up, int across, const struct context *context)
 {
 	for (assert(up >= 0); up--; assert(context))
 		context = context->outer;
-	assert(node_is_abs(context->abs));
-	/* the +1 skips over the function body */
-	assert(slot_is_name(context->abs->slots[across+1]));
-	return context->abs->slots[across+1].name;
+	assert(across < context->nformals);
+	return context->formals[across];
 }
+
+/*
+ * Even though well-behaved terms have tractable readbacks, stuck terms
+ * (possibly due to minor bugs like misnamed variables) can lead to huge
+ * pile-ups of nested, shared nodes; a node which can be printed in a
+ * screen or two can turn into gigabytes or more of term output.  Since
+ * the real calculation product is the node while the term & form are
+ * for human-readable output, we clamp the expansion (by pruning terms)
+ * when the term count would grow too much as a function of node count.
+ */
+#define UNSHARING_K 1000
+
+struct unshare {
+	struct wordtab nodes;
+	size_t nnodes, nterms;
+};
 
 struct shift {
 	struct shift *prev;
@@ -95,21 +113,23 @@ static int shift_index(int index, const struct shift *shift)
 	return index;
 }
 
-static struct term *uncrumble_node(const struct node *node, int cutoff,
+static struct term *unflatten_node(const struct node *node, int cutoff,
 				   const struct context *context,
-				   struct shift *shift);
+				   struct shift *shift,
+				   struct unshare *unshare);
 
-static struct term *uncrumble_body(const struct node *node, int cutoff,
+static struct term *unflatten_body(const struct node *node, int cutoff,
 				   const struct context *context,
-				   struct shift *shift)
+				   struct shift *shift,
+				   struct unshare *unshare)
 {
 	assert(node->variety == NODE_SENTINEL);
-	return uncrumble_node(node->next, cutoff, context, shift);
+	return unflatten_node(node->next, cutoff, context, shift, unshare);
 }
 
-static struct term *uncrumble_abs(const struct node *node, int cutoff,
+static struct term *unflatten_abs(const struct node *node, int cutoff,
 				  const struct context *context,
-				  struct shift *shift)
+				  struct shift *shift, struct unshare *unshare)
 {
 	assert(node_is_abs(node));
 	assert(node->nslots);
@@ -117,33 +137,37 @@ static struct term *uncrumble_abs(const struct node *node, int cutoff,
 	struct node *body = node_abs_body(node);
 	assert(body->variety == NODE_SENTINEL);
 	assert(body->depth == node->depth + 1);
-	size_t nformals = node->nslots - 1;	/* omit body */
-	assert(nformals);
-	symbol_mt *formals = xmalloc(sizeof *formals * nformals);
-	for (size_t i = 0; i < nformals; ++i) {
-		assert(slot_is_name(node->slots[i+1]));
-		formals[i] = node->slots[i+1].name;
+	assert(node->nslots);
+	symbol_mt *formals = xmalloc(sizeof *formals * node->nslots);
+	formals[0] = node->variety == NODE_FIX ?
+		symtab_fresh(symtab_intern("self")) :
+		the_empty_symbol;
+	for (size_t i = 1; i < node->nslots; ++i) {
+		assert(node->slots[i].variety == SLOT_PARAM);
+		formals[i] = node->slots[i].name;
 	}
 	struct context scope = {
 		.outer = context, 
-		.abs = node,
+		.formals = formals,
+		.nformals = node->nslots,
 	};
 
 	/* node can only have one body for now */
 	struct term **bodies = xmalloc(sizeof *bodies);
-	bodies[0] = uncrumble_body(body, cutoff + 1, &scope, shift);
-	return node->slots[1].variety == SLOT_SELF ?
-		TermFix(nformals, formals, 1, bodies) :
-		TermAbs(nformals, formals, 1, bodies);
+	bodies[0] = unflatten_body(body, cutoff + 1, &scope, shift, unshare);
+	return node->variety == NODE_FIX ?
+		TermFix(node->nslots, formals, 1, bodies) :
+		TermAbs(node->nslots, formals, 1, bodies);
 }
 
-static struct term *uncrumble_slot(struct slot slot, int depth, int cutoff,
+static struct term *unflatten_slot(struct slot slot, int depth, int cutoff,
 				   const struct context *context,
-				   struct shift *shift)
+				   struct shift *shift, struct unshare *unshare)
 {
 	switch (slot.variety) {
 	case SLOT_BODY:
-		return uncrumble_body(slot.subst, cutoff, context, shift);
+		return unflatten_body(slot.subst, cutoff, context,
+				      shift, unshare);
 	case SLOT_BOUND: {
 		shift->cutoff = cutoff;
 		int shifted = shift_index(slot.bv.up, shift);
@@ -154,6 +178,7 @@ static struct term *uncrumble_slot(struct slot slot, int depth, int cutoff,
 	case SLOT_FREE: return slot.term;
 	case SLOT_NUM: return TermNum(slot.num);
 	case SLOT_PRIM: return TermPrim(slot.prim);
+	case SLOT_STRING: return TermString(xstrdup(slot.str));
 	default: /* handled below... */;
 	}
 
@@ -170,20 +195,35 @@ static struct term *uncrumble_slot(struct slot slot, int depth, int cutoff,
 			.cutoff = 0,
 		};
 		assert(nextshift.delta);
-		return uncrumble_node(target, 0, context, &nextshift);
+		return unflatten_node(target, 0, context, &nextshift, unshare);
 	}
-	return uncrumble_node(target, cutoff, context, shift);
+	return unflatten_node(target, cutoff, context, shift, unshare);
 }
 
-static struct term *uncrumble_node(const struct node *node, int cutoff,
+static struct term *unflatten_node(const struct node *node, int cutoff,
 				   const struct context *context,
-				   struct shift *shift)
+				   struct shift *shift, struct unshare *unshare)
 {
+	/*
+	 * Do we need to truncate due to superlinear expansion?  We
+	 * actually allow an expansion factor of O(N log N), while
+	 * pathological cases due to stuck terms exhibit exponential
+	 * growth.
+	 */
+	if (unshare->nnodes * log (unshare->nnodes + M_E) * UNSHARING_K <
+	    unshare->nterms)
+		return TermPruned();
+	if (!wordtab_test(&unshare->nodes, (word) node)) {
+		wordtab_set(&unshare->nodes, (word) node);
+		unshare->nnodes++;
+	}
+	unshare->nterms++;
+
 	assert(node->nref);
 	switch (node->variety) {
 	case NODE_ABS:
 	case NODE_FIX:
-		return uncrumble_abs(node, cutoff, context, shift);
+		return unflatten_abs(node, cutoff, context, shift, unshare);
 	case NODE_APP:
 	case NODE_CELL:
 	case NODE_TEST:
@@ -200,8 +240,8 @@ static struct term *uncrumble_node(const struct node *node, int cutoff,
 	 */
 	struct term **slotvals = xmalloc(sizeof *slotvals * node->nslots);
 	for (size_t i = 0; i < node->nslots; ++i)
-		slotvals[i] = uncrumble_slot(node->slots[i], node->depth,
-					     cutoff, context, shift);
+		slotvals[i] = unflatten_slot(node->slots[i], node->depth,
+					     cutoff, context, shift, unshare);
 
 	struct term *retval = NULL;
 	switch (node->variety) {
@@ -214,11 +254,14 @@ static struct term *uncrumble_node(const struct node *node, int cutoff,
 		retval = TermApp(slotvals[0], nargs, args);
 		break;
 	}
-	case NODE_CELL:
-		assert(node->nslots == 0 || node->nslots == 2);	/* nil/pair */
-		retval = node->nslots == 0 ? TermNil() :
-			TermPair(slotvals[0], slotvals[1]);
+	case NODE_CELL: {
+		size_t nelts = node->nslots;
+		struct term **elts = xmalloc(sizeof *elts * nelts);
+		for (size_t i = 0; i < nelts; ++i)
+			elts[i] = slotvals[i];
+		retval = TermCell(nelts, elts);
 		break;
+	}
 	case NODE_TEST: {
 		struct term **csqs = xmalloc(sizeof *csqs),
 			    **alts = xmalloc(sizeof *alts);
@@ -239,9 +282,13 @@ static struct term *uncrumble_node(const struct node *node, int cutoff,
 	return retval;
 }
 
-struct term *uncrumble(const struct node *node)
+struct term *unflatten(const struct node *node)
 {
 	assert(node->depth == 0);
 	struct shift shift = { .prev = NULL, .delta = 0, .cutoff = 0 };
-	return uncrumble_body(node, 0, NULL, &shift);
+	struct unshare unshare = { .nnodes = 0, .nterms = 0 };
+	wordtab_init(&unshare.nodes, 100 /* size hint */);
+	struct term *retval = unflatten_body(node, 0, NULL, &shift, &unshare);
+	wordtab_fini(&unshare.nodes);
+	return retval;
 }

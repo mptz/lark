@@ -24,10 +24,12 @@
 #include <stdio.h>
 
 #include <util/base64.h>
+#include <util/memutil.h>
 #include <util/message.h>
 
 #include "heap.h"
 #include "node.h"
+#include "num.h"
 #include "memloc.h"
 #include "prim.h"
 #include "term.h"
@@ -53,30 +55,15 @@ struct node *NodeAbs(struct node *prev, int depth, struct node *body,
 	assert(body->variety == NODE_SENTINEL);
 	assert(body->depth == depth + 1);
 
-	struct node *node = node_alloc(NODE_ABS, prev, depth,
-				       nparams + 1 /* for body */);
+	assert(nparams);
+	enum node_variety variety = params[0] == the_empty_symbol ?
+		NODE_ABS : NODE_FIX;
+	struct node *node = node_alloc(variety, prev, depth, nparams);
 	node->slots[SLOT_ABS_BODY].variety = SLOT_BODY;
 	node->slots[SLOT_ABS_BODY].subst = body;
-	for (size_t i = 1; i <= nparams; ++i) {
+	for (size_t i = 1; i < nparams; ++i) {
 		node->slots[i].variety = SLOT_PARAM;
-		node->slots[i].name = params[i-1];
-	}
-	return node;
-}
-
-struct node *NodeAbsCopy(struct node *prev, int depth, struct node *body,
-			 struct node *src)
-{
-	assert(src->variety == NODE_ABS || src->variety == NODE_FIX);
-	assert(body->variety == NODE_SENTINEL);
-	assert(body->depth == depth + 1);
-
-	struct node *node = node_alloc(src->variety, prev, depth, src->nslots);
-	node->slots[SLOT_ABS_BODY].variety = SLOT_BODY;
-	node->slots[SLOT_ABS_BODY].subst = body;
-	for (size_t i = 1; i < node->nslots; ++i) {
-		node->slots[i].variety = SLOT_PARAM;
-		node->slots[i].name = src->slots[i].name;
+		node->slots[i].name = params[i];
 	}
 	return node;
 }
@@ -117,6 +104,12 @@ struct node *NodeGeneric(struct node *prev, int depth, size_t nslots)
 	return node_alloc(NODE_INVALID, prev, depth, nslots);
 }
 
+struct node *NodeLet(struct node *prev, int depth, size_t ndefs)
+{
+	assert(ndefs);
+	return node_alloc(NODE_LET, prev, depth, ndefs);
+}
+
 struct node *NodeNum(struct node *prev, int depth, double num)
 {
 	struct node *node = node_alloc(NODE_VAL, prev, depth, 1);
@@ -125,7 +118,7 @@ struct node *NodeNum(struct node *prev, int depth, double num)
 	return node;
 }
 
-struct node *NodePrim(struct node *prev, int depth, unsigned prim)
+struct node *NodePrim(struct node *prev, int depth, const struct prim *prim)
 {
 	struct node *node = node_alloc(NODE_VAL, prev, depth, 1);
 	node->slots[0].variety = SLOT_PRIM;
@@ -148,6 +141,14 @@ struct node *NodeSentinel(struct node *next, struct node *prev, int depth)
 	next->backref = &node->slots[0];
 	next->nref++;
 
+	return node;
+}
+
+struct node *NodeString(struct node *prev, int depth, const char *str)
+{
+	struct node *node = node_alloc(NODE_VAL, prev, depth, 1);
+	node->slots[0].variety = SLOT_STRING;
+	node->slots[0].str = xstrdup(str);
 	return node;
 }
 
@@ -211,9 +212,18 @@ void node_free(struct node *node)
 	case NODE_FIX:
 		node_free(node_abs_body(node));
 		break;
+	case NODE_LET:
+		/* let bodies aren't connected to chains; free here */
+		assert(node->slots[0].variety == SLOT_BODY);
+		node_free(node->slots[0].subst);
+		break;
 	case NODE_TEST:
 		node_free(node->slots[SLOT_TEST_CSQ].subst);
 		node_free(node->slots[SLOT_TEST_ALT].subst);
+		break;
+	case NODE_VAL:
+		if (node->slots[0].variety == SLOT_STRING)
+			xfree(node->slots[0].str);
 		break;
 	default:
 		/* nada */;
@@ -263,8 +273,8 @@ void node_replace(struct node *node, struct node *dest)
 
 struct node *node_take_body(struct node *abs)
 {
-	assert(node_is_abs(abs));
-	assert(abs->nref == 0);
+	assert(node_is_binder(abs));
+	assert(abs->variety == NODE_LET || abs->nref == 0);
 	struct node *body = node_abs_body(abs);
 	abs->slots[SLOT_ABS_BODY].subst = NULL;		/* wipe body */
 	return body;
@@ -329,10 +339,12 @@ static void node_list_slot(struct slot slot, intptr_t base)
 				term_print(slot.term);
 				fputs("]", stdout);
 				break;
-	case SLOT_NUM:		printf("num[%g]", slot.num);
+	case SLOT_NUM:		fputs("num[", stdout);
+				num_print(slot.num);
+				fputs("]", stdout);
 				break;
-	case SLOT_PRIM:		printf("prim[%s]", prim_name(slot.prim));
-				break;
+	case SLOT_PRIM:		printf("prim[%s]", slot.prim->name); break;
+	case SLOT_STRING:	printf("str[%s]", slot.str); break;
 	case SLOT_SUBST:	node_list_addr(slot.subst, base,
 					       buf, sizeof buf);
 				printf("^%s", buf);
@@ -434,19 +446,6 @@ void node_list_rl(struct node *node)
 	node_list_helper(node, (intptr_t) node, 0);
 }
 
-static void node_print_slot(struct slot slot)
-{
-	switch (slot.variety) {
-	case SLOT_BOUND:	printf("$%d.%d", slot.bv.up, slot.bv.across);
-				break;
-	case SLOT_FREE:		term_print(slot.term); break;
-	case SLOT_NUM:		printf("%g", slot.num); break;
-	case SLOT_PRIM:		printf("'%s'", prim_name(slot.prim)); break;
-	case SLOT_SUBST:	printf("^%s", memloc(slot.subst)); break;
-	default:	panicf("Unhandled slot variety %d\n", slot.variety);
-	}
-}
-
 static void node_print_body_contents(const struct node *node)
 {
 	/* body may have been wiped with node_wipe_body() */
@@ -455,6 +454,24 @@ static void node_print_body_contents(const struct node *node)
 		node_print_body(node);
 	} else
 		fputs("{collected}", stdout);
+}
+
+static void node_print_slot(struct slot slot)
+{
+	switch (slot.variety) {
+	case SLOT_BODY:		putchar('(');
+				node_print_body_contents(slot.subst);
+				putchar(')');
+				break;
+	case SLOT_BOUND:	printf("$%d.%d", slot.bv.up, slot.bv.across);
+				break;
+	case SLOT_FREE:		term_print(slot.term); break;
+	case SLOT_NUM:		num_print(slot.num); break;
+	case SLOT_PRIM:		printf("'%s'", slot.prim->name); break;
+	case SLOT_STRING:	printf("\"%s\"", slot.str); break;
+	case SLOT_SUBST:	printf("^%s", memloc(slot.subst)); break;
+	default:	panicf("Unhandled slot variety %d\n", slot.variety);
+	}
 }
 
 static void node_print_contents(const struct node *node)

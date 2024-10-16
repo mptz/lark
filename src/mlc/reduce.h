@@ -26,5 +26,6 @@ struct node;
 
 extern struct node *reduce(struct node *node);
 extern void print_eval_stats(void);
+extern void reset_eval_stats(void);
 
 #endif /* LARK_MLC_REDUCE_H */

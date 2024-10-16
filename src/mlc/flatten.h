@@ -1,5 +1,5 @@
-#ifndef LARK_MLC_CRUMBLE_H
-#define LARK_MLC_CRUMBLE_H
+#ifndef LARK_MLC_FLATTEN_H
+#define LARK_MLC_FLATTEN_H
 /*
  * Copyright (c) 2009-2023 Michael P. Touloumtzis.
  *
@@ -25,6 +25,6 @@
 struct node;
 struct term;
 
-extern struct node *crumble(struct term *term);
+extern struct node *flatten(struct term *term);
 
-#endif /* LARK_MLC_CRUMBLE_H */
+#endif /* LARK_MLC_FLATTEN_H */

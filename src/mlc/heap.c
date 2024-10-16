@@ -40,11 +40,40 @@ struct heap_stats {
 	unsigned long node_allocs, node_frees, nodes_in_use;
 };
 
+#define MAX_HEAP_PRESSURE 0.9
+#define MIN_HEAP_THRESHOLD 0.4
+
+float the_heap_pressure, the_heap_threshold = 0.6;
+
 static struct heap_stats the_heap_stats;
+
+static inline void update_heap_pressure(void)
+{
+	the_heap_pressure = (float) the_heap_stats.nodes_in_use /
+			    (float) MAX_NODES;
+	if (the_heap_pressure > MAX_HEAP_PRESSURE)
+		the_heap_pressure = MAX_HEAP_PRESSURE;
+}
 
 void node_heap_init(void)
 {
-	/* nothing to do for the moment */
+	update_heap_pressure();
+}
+
+void node_heap_calibrate(void)
+{
+	update_heap_pressure();
+	assert(the_heap_pressure >= 0.0);
+	assert(the_heap_pressure <  1.0);
+	assert(the_heap_threshold >= MIN_HEAP_THRESHOLD);
+	assert(the_heap_threshold <  1.0);
+	if (the_heap_pressure > the_heap_threshold * 0.666)
+		the_heap_threshold += (1.0 - the_heap_threshold) / 2.0;
+	else if (the_heap_pressure < the_heap_threshold * 0.333) {
+		the_heap_threshold *= 0.666;
+		if (the_heap_threshold < MIN_HEAP_THRESHOLD)
+			the_heap_threshold = MIN_HEAP_THRESHOLD;
+	}
 }
 
 struct node *node_heap_alloc(size_t nslots)
@@ -53,6 +82,7 @@ struct node *node_heap_alloc(size_t nslots)
 		panic("Node heap exhausted!\n");
 	the_heap_stats.node_allocs++;
 	the_heap_stats.nodes_in_use++;
+	update_heap_pressure();
 #ifdef SLOT_COUNTS_SORTED
 	struct node *node = xmalloc(sizeof *node +
 				    nslots * sizeof node->slots[0]);
@@ -72,19 +102,31 @@ void node_heap_free(struct node *node)
 		panic("Nodes in use would fall below zero!\n");
 	the_heap_stats.node_frees++;
 	the_heap_stats.nodes_in_use--;
+	update_heap_pressure();
 	assert(node);
 	xfree(node);
 }
 
 void print_heap_stats(void)
 {
-	printf(
+	fprintf(stderr,
 	"\t\t\tHEAP STATISTICS\n"
 	"\t\t\t===============\n"
 	"Nodes:\t%12s %-10lu %12s %-10lu\n"
-	      "\t%12s %-10lu %12s %-10lu\n",
+	      "\t%12s %-10lu %12s %-10lu\n"
+	"Usage:\t%12s %-10g %12s %-10g\n",
 	"total",	(unsigned long) MAX_NODES,
 	"in_use",	the_heap_stats.nodes_in_use,
 	"allocs",	the_heap_stats.node_allocs,
-	"frees",	the_heap_stats.node_frees);
+	"frees",	the_heap_stats.node_frees,
+	"pressure",	the_heap_pressure,
+	"threshold",	the_heap_threshold);
+}
+
+void reset_heap_stats(void)
+{
+	/* if we're leaking nodes, we'll still see it */
+	assert(the_heap_stats.node_allocs >= the_heap_stats.node_frees);
+	the_heap_stats.node_allocs -= the_heap_stats.node_frees;
+	the_heap_stats.node_frees = 0;
 }

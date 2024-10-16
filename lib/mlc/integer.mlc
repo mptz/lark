@@ -1,72 +1,72 @@
 |* Basic operations on integers
 |* The sign function 's' represents the sign bit
 |* The sign function is only applied to negative numbers
-z0	:= [_. zero]
-z1	:= [_. one]
-z-1	:= [s. [f. [x. x; f; s]]]
+z0	:= [_. zero].
+z1	:= [_. one].
+z-1	:= [s. [f. [x. x; f; s]]].
 
 |* Conversion between N and Z
 |* z2n returns the natural number which is the input's absolute value.
 |* abs is the absolute value in type Z -> Z.
 |* n2zinv given n returns the negative integer -n.
 |* absinv is the negative absolute value in type Z -> Z.
-n2z	:= [n. [_. n]]
-n2zinv	:= [n. [s. [f. [x. s (n (f) (x))]]]]
-z2n	:= [i. id; i]
-abs	:= [i. i; z2n; n2z]
-absinv	:= [i. i; z2n; n2zinv]
+n2z	:= [n. [_. n]].
+n2zinv	:= [n. [s. [f. [x. s (n (f) (x))]]]].
+z2n	:= [i. id; i].
+abs	:= [i. i; z2n; n2z].
+absinv	:= [i. i; z2n; n2zinv].
 
 |* Three-way branch yielding p, z, or n depending on whether i is positive,
 |* zero, or negative, respectively.  branch is just a different arg order.
-signum	:= [p, z, n. [i. i ([_. n]) ([_. p]) (z)]]
-branch	:= [i. [p, z, n. i ([_. n]) ([_. p]) (z)]]
+signum	:= [p, z, n. [i. i ([_. n]) ([_. p]) (z)]].
+branch	:= [i. [p, z, n. i ([_. n]) ([_. p]) (z)]].
 
-z0p	:= signum (false, true, false)
-negp	:= signum (false, false, true)
-posp	:= signum (true, false, false)
+z0p	:= signum (false, true, false).
+negp	:= signum (false, false, true).
+posp	:= signum (true, false, false).
 
-zinv	:= [i. branch (i) (i; absinv, i, i; abs)]
-zsucc	:= [i. branch (i) (i; z2n; succ; n2z, z1, i; z2n; pred; n2z; zinv)]
+zinv	:= [i. branch (i) (i; absinv, i, i; abs)].
+zsucc	:= [i. branch (i) (i; z2n; succ; n2z, z1, i; z2n; pred; n2z; zinv)].
 
-zadd	:= [i, j. branch (i) (branch (j) (add (i; z2n, j; z2n); n2z,	\
-					  i,				\
-					  z2n (i) (zsucc) (j)),		\
-			      j,					\
-			      branch (j) (z2n (j) (zsucc) (i),		\
-					  i,				\
-					  add (i; z2n, j; z2n); n2zinv))]
+zadd	:= [i, j. branch (i) (branch (j) (add (i; z2n, j; z2n); n2z,
+					  i,
+					  z2n (i) (zsucc) (j)),
+			      j,
+			      branch (j) (z2n (j) (zsucc) (i),
+					  i,
+					  add (i; z2n, j; z2n); n2zinv))].
 
-zsub	:= [i, j. zadd (i, j; zinv)]
-zeq	:= [i, j. zsub (i, j); z0p]
-zlt	:= [i, j. zsub (i, j); negp]
-zgt	:= [i, j. zsub (i, j); posp]
-zlte	:= [i, j. signum (false, true, true) (zsub (i, j))]
-zgte	:= [i, j. signum (true, true, false) (zsub (i, j))]
+zsub	:= [i, j. zadd (i, j; zinv)].
+zeq	:= [i, j. zsub (i, j); z0p].
+zlt	:= [i, j. zsub (i, j); negp].
+zgt	:= [i, j. zsub (i, j); posp].
+zlte	:= [i, j. signum (false, true, true) (zsub (i, j))].
+zgte	:= [i, j. signum (true, true, false) (zsub (i, j))].
 
-zk0	:= [_. z0]
-zscmp	:= [i, j. branch (i) (branch (j) (n2z, zk0, n2zinv),	\
-			      zk0,				\
-			      branch (j) (n2zinv, zk0, n2z))]
-zmult	:= [i, j. zscmp (i, j) (mult (i; z2n, j; z2n))]
-zdiv	:= [i, j. zscmp (i, j) (div  (i; z2n, j; z2n))]
+zk0	:= [_. z0].
+zscmp	:= [i, j. branch (i) (branch (j) (n2z, zk0, n2zinv),
+			      zk0,
+			      branch (j) (n2zinv, zk0, n2z))].
+zmult	:= [i, j. zscmp (i, j) (mult (i; z2n, j; z2n))].
+zdiv	:= [i, j. zscmp (i, j) (div  (i; z2n, j; z2n))].
 
 |* Define more numbers, just for convenience
-z2	:= [_. [f. [x. x; f; f]]]
-z3	:= [_. [f. [x. x; f; f; f]]]
-z4	:= [_. [f. [x. x; f; f; f; f]]]
-z5	:= [_. [f. [x. x; f; f; f; f; f]]]
-z6	:= [_. [f. [x. x; f; f; f; f; f; f]]]
-z7	:= [_. [f. [x. x; f; f; f; f; f; f; f]]]
-z8	:= [_. [f. [x. x; f; f; f; f; f; f; f; f]]]
-z9	:= [_. [f. [x. x; f; f; f; f; f; f; f; f; f]]]
-z10	:= [_. [f. [x. x; f; f; f; f; f; f; f; f; f; f]]]
+z2	:= [_. [f. [x. x; f; f]]].
+z3	:= [_. [f. [x. x; f; f; f]]].
+z4	:= [_. [f. [x. x; f; f; f; f]]].
+z5	:= [_. [f. [x. x; f; f; f; f; f]]].
+z6	:= [_. [f. [x. x; f; f; f; f; f; f]]].
+z7	:= [_. [f. [x. x; f; f; f; f; f; f; f]]].
+z8	:= [_. [f. [x. x; f; f; f; f; f; f; f; f]]].
+z9	:= [_. [f. [x. x; f; f; f; f; f; f; f; f; f]]].
+z10	:= [_. [f. [x. x; f; f; f; f; f; f; f; f; f; f]]].
 
-z-2	:= [s. [f. [x. x; f; f; s]]]
-z-3	:= [s. [f. [x. x; f; f; f; s]]]
-z-4	:= [s. [f. [x. x; f; f; f; f; s]]]
-z-5	:= [s. [f. [x. x; f; f; f; f; f; s]]]
-z-6	:= [s. [f. [x. x; f; f; f; f; f; f; s]]]
-z-7	:= [s. [f. [x. x; f; f; f; f; f; f; f; s]]]
-z-8	:= [s. [f. [x. x; f; f; f; f; f; f; f; f; s]]]
-z-9	:= [s. [f. [x. x; f; f; f; f; f; f; f; f; f; s]]]
-z-10	:= [s. [f. [x. x; f; f; f; f; f; f; f; f; f; f; s]]]
+z-2	:= [s. [f. [x. x; f; f; s]]].
+z-3	:= [s. [f. [x. x; f; f; f; s]]].
+z-4	:= [s. [f. [x. x; f; f; f; f; s]]].
+z-5	:= [s. [f. [x. x; f; f; f; f; f; s]]].
+z-6	:= [s. [f. [x. x; f; f; f; f; f; f; s]]].
+z-7	:= [s. [f. [x. x; f; f; f; f; f; f; f; s]]].
+z-8	:= [s. [f. [x. x; f; f; f; f; f; f; f; f; s]]].
+z-9	:= [s. [f. [x. x; f; f; f; f; f; f; f; f; f; s]]].
+z-10	:= [s. [f. [x. x; f; f; f; f; f; f; f; f; f; f; s]]].
