@@ -18,6 +18,9 @@ gather := [fn, init, cell.
 		[i < # cell? step (fn (state, i; nth), i + 1) | state]] }
 	step (init, 0)].
 
+cell-sum := [cell. gather ((+), 0, cell)].
+cell-product := [cell. gather ((*), 1, cell)].
+
 |* the cell equivalent of map for lists
 morph := [fn, src.  fill (# src, [i. at (i, src); fn])].
 

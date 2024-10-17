@@ -56,11 +56,8 @@ prime-to-digit-key :=
 
 digit-to-prime := [d. at (d - 1, first-nine-primes)].
 prime-to-digit := [p. at (p, prime-to-digit-key)].
-
-cell-product := [c. gather ((*), 1, c)].
 unconstrained := first-nine-primes; cell-product.
 
-|*
 |* Build a square containing multiple digits; used for testing as when
 |* we build a real board, squares start single-valued or unconstrained.
 |*
@@ -85,45 +82,42 @@ square-containing :=
 |* we've identified an earlier inconsistency and must backtrack.
 |*
 
+|* Remove the given value from the square if it's a possibility for the
+|* square.  Return the new square (without the value) or the original
+|* square if the value was already not a possibility.
+|*
 constrain-square := [square, value.
-	let { without-digit := square / value }
-	[without-digit; $is-integral? without-digit | square]].
+	let { without-value := square / value }
+	[without-value; $is-integral? without-value | square]].
 
+|* Return the solution (in digit form) of a completely solved square,
+|* otherwise return 0.  Even when working with primes, this can be used
+|* as a solved/not solved truth value.
+|*
 square-solution :=
 	[square. [square <= last-prime? at (square, prime-to-digit-key) | 0]].
 
-|*
 |* What are the possible values in a square?  Essentially prime factoring.
 |* Needed for hypothesis testing.
 |*
-
 square-possibilities := [square.
 	let { try := [accum, prime.
 		[$is-integral (square / prime)? cons (prime, accum) | accum]]. }
 	gather (try, [], first-nine-primes)].
 
-|* Grid representation.
+|*
+|* Grid representation.  A grid is represented as a 9*9-element cell,
+|* using the prime number representation above for individual squares.
+|*
+|* One of the key grid operations is finding a square's "peers", i.e.
+|* the other squares with which it shares a row, column, or box.  We
+|* precalculate a "peer grid" which, for each square index 0..80,
+|* contains row, column, and box arrays containing the square's peers.
+|*
 
 all-digits := [1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9].
 num-digits := # all-digits.
 grid-size := num-digits * num-digits.
-
-digit-to-string-key :=
-	[" " | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9"].
-digit-to-string := [d. at (d, digit-to-string-key)].
-
-impossible-grid :=
-	[ 5 | 3 | 0 | 0 | 7 | 0 | 0 | 0 | 0
-	| 6 | 0 | 0 | 1 | 9 | 5 | 0 | 0 | 0
-	| 0 | 9 | 8 | 0 | 0 | 0 | 0 | 6 | 0
-
-	| 8 | 0 | 0 | 0 | 6 | 0 | 0 | 0 | 3
-	| 4 | 0 | 0 | 8 | 0 | 3 | 0 | 0 | 1
-	| 7 | 0 | 0 | 0 | 2 | 0 | 1 | 0 | 6	|* note extra 1
-
-	| 0 | 6 | 0 | 0 | 0 | 0 | 2 | 8 | 0
-	| 0 | 0 | 0 | 4 | 1 | 9 | 0 | 0 | 5
-	| 0 | 0 | 0 | 0 | 8 | 0 | 0 | 7 | 9 ].
 
 grid-row-indexes := [
 	[  0 |  1 |  2 |  3 |  4 |  5 |  6 |  7 |  8 ] |
@@ -174,12 +168,24 @@ gather-peers := [i.
 
 peer-key := fill (grid-size, gather-peers).
 
+|* The main interface to square -> peers: returns a grid with the given
+|* square value in i's peers and an unconstrained value otherwise.  When
+|* we solve a square, we construct such a peer grid as a constraint set
+|* restricting the solved value from appearing in the node's peers.
+|*
 peer-grid := [i, s.
 	let { peers := at (i, peer-key) }
 	let { peer-but-not-self :=
 		[j. [$and (i <> j, found (j, peers))? s | unconstrained]] }
 	fill (grid-size, peer-but-not-self)].
 
+digit-to-string-key :=
+	[" " | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9"].
+digit-to-string := [d. at (d, digit-to-string-key)].
+
+|* Converting a grid to a string, so we can conveniently read off a
+|* solution.  Includes converting from prime representation to digits.
+|*
 grid-to-string := [grid.
 	let { digit-grid := morph (square-solution, grid) }
 	let { hline := "\n+---+---+---+---+---+---+---+---+---+\n". }
@@ -194,10 +200,13 @@ grid-to-string := [grid.
 	}
 	#0 gather (xform, ["grid:" ++ hline | 0], digit-grid)].
 
-|* Ingesting puzzles
+|* Ingesting puzzles.  For convenience, we start with digit puzzles using
+|* 0 as 'no hint'/unconstrained.  initial-grid converts these digit grids 
+|* to prime grids, and initial-constraints generates the constraints
+|* arising from the clues.
+|*
 initial-value := [square. [square? digit-to-prime (square) | unconstrained]].
 initial-grid := [source-grid. morph (initial-value, source-grid)].
-empty-grid := cell (grid-size, 0); initial-grid.
 
 |* Given two grids grid0 and grid1, return a list of peer grids for squares
 |* solved in grid1 but not in grid0.  We'll apply these as constraints in
@@ -218,23 +227,23 @@ diff-grids := [grid0, grid1.
 		[i < grid-size? self (i + 1, diff-squares(i, accum)) | accum]]
 	}
 	step (0, nil)].
+
+empty-grid := cell (grid-size, 0); initial-grid.
 initial-constraints := [grid. diff-grids (empty-grid, grid)].
 
-|* The heart of constraint propagation.
+|* A constraint propagation step: given a grid and a list of constraint
+|* grids, apply all of the given constraint grids to the original.  A
+|* square might be overconstrained (1), solved, or remain unsolved during
+|* this process.  The return value is simply a new grid identical to
+|* source-grid except constrained as specified.
+|*
+|* We expect each square in the constraint grids to be either a prime
+|* number (solved value) or 'unconstrained'.  Multiple constraints are
+|* applied not by products-of-primes but by multiple constraint grids.
+|*
 constrained-grid := [source-grid, constraint-grids.
 	let {
 
-	|* apply-constraints successively applies all constraints in
-	|* 'grids' (a list of constraint grids) to the given square,
-	|* based on the place 'i'.
-	|*
-	|* The return value is one of:
-	|*	- A number, if the square is ambiguous (not solved).
-	|*	  This is simply the current square value.
-	|*	- A pair [ number | digit ] if the square is solved.
-	|*	- A string: place is unsatisfiable (overconstrained).
-	|* XXX update above.
-	|*
 	apply-constraints := [self! i, square, grids.
 
 		|* If grids is nil, we made it through all constraints,
@@ -242,26 +251,32 @@ constrained-grid := [source-grid, constraint-grids.
 		|*
 		[grids; is-nil? square |
 
-		let { value := at (i, grids; car).  remain := grids; cdr. }
-		[value == unconstrained? self (i, square, remain) |
-			let { x := constrain-square (square, value) }
-			[x < first-prime? 1 | self (i, x, remain)]]]]
+		let { value := at (i, grids; car) }
+		self (i, [value == unconstrained? square |
+			constrain-square (square, value)], grids; cdr)]]
 
 	} let { xform := [i, e. apply-constraints (i, e, constraint-grids)] }
 	morph-with-index (xform, source-grid)].
 
+|* Run constraint propagation to completion: each time we constrain a grid
+|* we might solve some squares, which in turn produces another round of
+|* constraints.  Keep applying constraints until we don't solve any squares.
+|*
 constrain := [self! grid, constraints.
 	let { new-grid := constrained-grid (grid, constraints) }
 	let { new-constraints := diff-grids (grid, new-grid) }
 	[new-constraints; is-nil? new-grid | self (new-grid, new-constraints)]].
 
-|* Analysis outcomes:
+|* The constraint propagation above doesn't try to understand outcomes
+|* like 'have we solved the puzzle?' or 'is the puzzle unsolvable'?  Here
+|* we make that determination, and get a clue as to how to proceed via
+|* hypothesis testing.  We return a number representing one of three
+|* outcomes:
+|*
 |* - Solved (represented by grid-size)
 |* - Not solved (represented by index of an ambiguous square with the
-|*   fewest possibilities).
+|*   fewest possibilities--this will be where we want to try guessing)
 |* - Impossible (represented by -1)
-|* Even if there are unsolved squares, we traverse the whole grid looking
-|* for impossible ones.
 |*
 analyze-grid := [grid.
 	let { test := [self! i, j, s.
@@ -274,10 +289,20 @@ analyze-grid := [grid.
 				self (i + 1, j, s)]]]] }
 	test (0, grid-size, num-digits + 1)].
 
+|* When we guess we need to replace a single square in a grid with the
+|* guessed value--that's all this function does.
+|*
 guess-grid := [i, n, grid.
 	let { xform := [j, e. [i == j? n | e]] }
 	morph-with-index (xform, grid)].
 
+|* Implement hypothesis testing.  When constraint propagation alone
+|* doesn't yield a solution, we find the most-constrained square and
+|* guess each possible value for it.  We propagate the constraint
+|* resulting from the guess, then recursively apply the same procedure
+|* to the resulting grid.  When we encounter an impossibity, backtrack
+|* and apply another guess possibility.
+|*
 constrain-and-guess := [constrain-and-guess! grid0, constraints0.
 
 	let { do-guess := [i, grid.
@@ -299,9 +324,29 @@ constrain-and-guess := [constrain-and-guess! grid0, constraints0.
 
 	do-analyze (constrain (grid0, constraints0))].
 
+|* Use constrain-and-guess to apply the full solution procedure.
+|*
 try-solve := [digit-grid.
 	let { prime-grid := digit-grid; initial-grid }
 	constrain-and-guess (prime-grid, prime-grid; initial-constraints)].
+
+|*
+|* Test grids
+|*
+
+|* for testing
+impossible-grid :=
+	[ 5 | 3 | 0 | 0 | 7 | 0 | 0 | 0 | 0
+	| 6 | 0 | 0 | 1 | 9 | 5 | 0 | 0 | 0
+	| 0 | 9 | 8 | 0 | 0 | 0 | 0 | 6 | 0
+
+	| 8 | 0 | 0 | 0 | 6 | 0 | 0 | 0 | 3
+	| 4 | 0 | 0 | 8 | 0 | 3 | 0 | 0 | 1
+	| 7 | 0 | 0 | 0 | 2 | 0 | 1 | 0 | 6	|* note extra 1
+
+	| 0 | 6 | 0 | 0 | 0 | 0 | 2 | 8 | 0
+	| 0 | 0 | 0 | 4 | 1 | 9 | 0 | 0 | 5
+	| 0 | 0 | 0 | 0 | 8 | 0 | 0 | 7 | 9 ].
 
 |* for copy & paste
 blank-grid :=
