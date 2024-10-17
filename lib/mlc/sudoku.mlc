@@ -169,14 +169,14 @@ gather-peers := [i.
 peer-key := fill (grid-size, gather-peers).
 
 |* The main interface to square -> peers: returns a grid with the given
-|* square value in i's peers and an unconstrained value otherwise.  When
-|* we solve a square, we construct such a peer grid as a constraint set
-|* restricting the solved value from appearing in the node's peers.
+|* square value in i's peers and value of 1 otherwise.  When we solve a
+|* square, we construct such a peer grid as a constraint set restricting
+|* the solved value from appearing in the node's peers.
 |*
 peer-grid := [i, s.
 	let { peers := at (i, peer-key) }
 	let { peer-but-not-self :=
-		[j. [$and (i <> j, found (j, peers))? s | unconstrained]] }
+		[j. [$and (i <> j, found (j, peers))? s | 1]] }
 	fill (grid-size, peer-but-not-self)].
 
 digit-to-string-key :=
@@ -252,8 +252,7 @@ constrained-grid := [source-grid, constraint-grids.
 		[grids; is-nil? square |
 
 		let { value := at (i, grids; car) }
-		self (i, [value == unconstrained? square |
-			constrain-square (square, value)], grids; cdr)]]
+		self (i, constrain-square (square, value), grids; cdr)]]
 
 	} let { xform := [i, e. apply-constraints (i, e, constraint-grids)] }
 	morph-with-index (xform, source-grid)].
@@ -308,8 +307,9 @@ constrain-and-guess := [constrain-and-guess! grid0, constraints0.
 	let { do-guess := [i, grid.
 		let { try-each := [try-each! guesses.
 			[guesses; is-nil? [] |
-			let { hypothesis := guess-grid (i, guesses; car, grid) }
-			let { constraints := diff-grids (grid, hypothesis) }
+			let { guess := guesses; car }
+			let { hypothesis := guess-grid (i, guess, grid) }
+			let { constraints := cons (peer-grid (i, guess), nil) }
 			let { recur :=
 				constrain-and-guess (hypothesis, constraints) }
 			[recur; is-nil? guesses; cdr; try-each | recur]]] }
