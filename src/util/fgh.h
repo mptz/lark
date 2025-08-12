@@ -33,6 +33,6 @@ extern uint32_t
 fgh32(const void *key, size_t size, uintptr_t k);
 
 extern uint64_t
-fgh64(const void *key, size_t size, uintptr_t k);
+fgh64(const void *key, size_t size);
 
 #endif /* LARK_UTIL_FGH_H */
