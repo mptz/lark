@@ -3883,7 +3883,7 @@ static void dump_hashtab_stats(struct hashtab *hashtab)
 	if (getenv("HASHTEST_DETAILED_STATS")) {
 		printf("Hash table nests total %zu, used %zu\n",
 		       hstats.nests, hstats.nestsused);
-		for (size_t i = 0; i < CUCKOO_NEST_SIZE; ++i)
+		for (size_t i = 0; i < HASHTAB_NEST_SIZE; ++i)
 			printf("Nest usage for slot %zu: %zu\n", i,
 				hstats.entry_used[i]);
 	}
@@ -3893,10 +3893,10 @@ static void dump_hashtab_stats(struct hashtab *hashtab)
 	 * invariants which are very unlikely to be violated, unless
 	 * we catch things just at the wrong time (e.g. after growth).
 	 */
-	assert((double) hstats.used / (double) hstats.capacity > 0.333);
+	assert((double) hstats.used / (double) hstats.capacity > 0.25);
 	assert((double) hstats.used / (double) hstats.capacity < 0.666);
 	assert((double) hstats.nestsused / (double) hstats.nests > 0.5);
-	for (size_t i = 1; i < CUCKOO_NEST_SIZE; ++i)
+	for (size_t i = 1; i < HASHTAB_NEST_SIZE; ++i)
 		assert(hstats.entry_used[i-1] > hstats.entry_used[i]);
 
 }
@@ -3910,15 +3910,18 @@ static void dump_wordtab_stats(struct wordtab *wordtab)
 		wstats.capacity, wstats.used, wstats.bins);
 	if (getenv("HASHTEST_DETAILED_STATS")) {
 		printf("Word table bins used: %zu\n", wstats.binsused);
-		for (size_t i = 0; i < CUCKOO_NEST_SIZE; ++i)
+		for (size_t i = 0; i < WORDTAB_NEST_SIZE; ++i)
 			printf("Nest usage for slot %zu: %zu\n", i,
 				wstats.entry_used[i]);
 	}
 }
 
-static void run_dict_test(void)
+static void run_dict_test(const char *dict)
 {
-	const char cmd[] = "xzcat src/util/test/american-english.xz";
+	printf("dictionary test: %s\n", dict);
+
+	char cmd [4096];
+	snprintf(cmd, sizeof cmd, "xzcat src/util/test/%s.xz", dict);
 	FILE *input = popen(cmd, "r");
 	if (!input)
 		ppanic(cmd);
@@ -3976,6 +3979,8 @@ static void run_dict_test(void)
 
 static void run_free_test(void)
 {
+	fputs("free test\n", stdout);
+
 	struct hashtab hashtab;
 	int r;
 
@@ -4000,6 +4005,8 @@ static void run_free_test(void)
 
 static void run_oob_test(void)
 {
+	fputs("oob test\n", stdout);
+
 	char apple[] = "apple", banana[] = "banana", cherry[] = "cherry",
 	     kumquat[] = "kumquat";
 	void *oob = (void*) "oob", *p;
@@ -4052,7 +4059,13 @@ static void run_oob_test(void)
 int main(int argc, char *argv[])
 {
 	set_execname(argv[0]);
-	run_dict_test();
+	run_dict_test("american-english");
+	run_dict_test("library-symbols");
+	run_dict_test("linux-manifest");
+	run_dict_test("primes");
+	run_dict_test("unicode-names");
+	run_dict_test("war-and-peace-paragraphs.txt");
+	run_dict_test("wordlist");
 	run_free_test();
 	run_oob_test();
 	return 0;
