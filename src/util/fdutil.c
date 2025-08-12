@@ -218,6 +218,20 @@ p_writeall(int fd, const void *buf, size_t count)
 	return count;
 }
 
+ssize_t r_copy(int src, int dst)
+{
+	const size_t bufsize = 16 * 1024;
+	char buf [bufsize];
+
+	while (1) {
+		ssize_t nread = r_read(src, buf, sizeof buf);
+		if (nread < 0) return -1;
+		if (nread == 0) return 0;
+		if (r_writeall(dst, buf, nread) < 0)
+			return -1;
+	}
+}
+
 inline ssize_t
 r_read(int fd, void *buf, size_t count)
 {
@@ -229,7 +243,8 @@ r_read(int fd, void *buf, size_t count)
 		if (errno == EBADF || errno == EFAULT ||
 		    errno == EINVAL || errno == EISDIR)
 			ppanic("read");
-		xperror("read");
+		if (errno != EAGAIN)	/* nonblocking fd only */
+			xperror("read");
 	}
 	return r;
 }

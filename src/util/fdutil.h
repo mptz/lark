@@ -51,10 +51,21 @@ extern ssize_t p_write(int fd, const void *buf, size_t count);
 extern ssize_t p_writeall(int fd, const void *buf, size_t count);
 
 /*
+ * Copy as much data as possible from one fd to the other.
+ * Restarts automatically on EINTR and short reads.  Will only return
+ * once no data is available to copy or a non-retryable error occurs.
+ * Uses an internal buffer, so none needs to be provided by the caller.
+ *
+ * Returns: -1 on error or 0 on success.
+ */
+extern ssize_t r_copy(int src, int dst);
+
+/*
  * Restarting read(); a minimal wrapper.
  *
  * Will not return -1 due to EINTR, although it may return a short read.
  * Panics only on application errors (EBADF, EFAULT, EINVAL, EISDIR).
+ * Prints errors other than EAGAIN/EWOULDBLOCK (nonblocking, no data).
  *
  * Returns: -1 or amount read (0 for EOF on blocking fd, as read(2)).
  */
