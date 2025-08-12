@@ -1,7 +1,7 @@
 #ifndef LARK_UTIL_MESSAGE_H
 #define LARK_UTIL_MESSAGE_H
 /*
- * Copyright (c) 2009-2019 Michael P. Touloumtzis.
+ * Copyright (c) 2009-2025 Michael P. Touloumtzis.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009-2019 Michael P. Touloumtzis.
+ * Copyright (c) 2009-2025 Michael P. Touloumtzis.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -84,11 +84,10 @@ msgf_real(unsigned level, const char *file, const char *function, int line,
 	 * This could be tightened up... a previous version of this file
 	 * had much more functionality (which sat unused).
 	 */
-	const char *typename;
-	int print_location = 1;	/* XXX may want to disable for info? */
+	const char *typename = NULL;
+	int print_location = 0;
 	switch (level & MSGLEVEL_MASK) {
 	case MSGLEVEL_ERR:
-		typename = "ERROR";
 		break;
 	case MSGLEVEL_WARN:
 		typename = "warning";
@@ -99,13 +98,15 @@ msgf_real(unsigned level, const char *file, const char *function, int line,
 	case MSGLEVEL_TRACE:
 	default:
 		typename = "trace";
+		print_location = 1;
 		break;
 	}
 
 	fprintf(stderr, "%s: ", execname);
 	if (print_location)
 		fprintf(stderr, "%s: %s (%d): ", file, function, line);
-	fprintf(stderr, "%s: ", typename);
+	if (typename)
+		fprintf(stderr, "%s: ", typename);
 	va_start(ap, format);
 	vfprintf(stderr, format, ap);
 	va_end(ap);
