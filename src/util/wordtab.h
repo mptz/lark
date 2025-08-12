@@ -1,7 +1,7 @@
 #ifndef LARK_UTIL_WORDTAB_H
 #define LARK_UTIL_WORDTAB_H
 /*
- * Copyright (c) 2009-2018 Michael P. Touloumtzis.
+ * Copyright (c) 2009-2024 Michael P. Touloumtzis.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -27,7 +27,7 @@
 
 #include "word.h"
 
-#define CUCKOO_NEST_SIZE 4
+#define WORDTAB_NEST_SIZE 8
 
 struct wordtab_entry {
 	word key;
@@ -35,37 +35,44 @@ struct wordtab_entry {
 };
 
 struct cuckoo_bin {
-	struct wordtab_entry entries [CUCKOO_NEST_SIZE];
+	struct wordtab_entry entries [WORDTAB_NEST_SIZE];
 };
 
 struct wordtab {
+	uint64_t salt;
 	size_t capacity;
 	void *oob;
 	struct cuckoo_bin *bins;
 };
 
 struct wordtab_iter {
-	struct wordtab *wordtab;
+	const struct wordtab *wordtab;
 	size_t bin;
 	unsigned entry;
 };
 
 struct wordtab_stats {
 	size_t capacity, used, bins, binsused,
-	       entry_used [CUCKOO_NEST_SIZE];
+	       entry_used [WORDTAB_NEST_SIZE];
 };
 
 extern void wordtab_init(struct wordtab *table, size_t hint);
 extern void wordtab_fini(struct wordtab *table);
 extern void wordtab_free_all_data(struct wordtab *table);
 extern void *wordtab_get(const struct wordtab *table, word key);
+extern bool wordtab_is_empty(struct wordtab *table);
 extern void wordtab_put(struct wordtab *table, word key, void *data);
 extern bool wordtab_rub(struct wordtab *table, word key);
+extern void wordtab_rub_all(struct wordtab *table);
 extern void wordtab_set_oob(struct wordtab *table, void *oob);
 extern void wordtab_stats(struct wordtab *table, struct wordtab_stats *stats);
-extern void wordtab_iter_init(struct wordtab *table, struct wordtab_iter *iter);
+extern void wordtab_iter_init(const struct wordtab *table,
+			      struct wordtab_iter *iter);
 extern struct wordtab_entry *wordtab_iter_next(struct wordtab_iter *iter);
 
+/*
+ * Inline functions supporting use as a set (value not significant).
+ */
 static inline void wordtab_set(struct wordtab *table, word key)
 	{ wordtab_put(table, key, (void*) ~(word) table->oob); }
 static inline bool wordtab_test(const struct wordtab *table, word key)
