@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009-2023 Michael P. Touloumtzis.
+ * Copyright (c) 2009-2025 Michael P. Touloumtzis.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -40,10 +40,39 @@ struct heap_stats {
 	unsigned long node_allocs, node_frees, nodes_in_use;
 };
 
-#define MAX_HEAP_PRESSURE 0.9
-#define MIN_HEAP_THRESHOLD 0.4
+/*
+ * The heap pressure is the fraction of the heap which is in use, with a
+ * a clamped upper limit at 95%.  When pressure is above the threshold,
+ * we may attempt collection; after collecting, we revise the threshold
+ * up or down:
+ *
+ *                    pressure <  0.333 threshold? => threshold *= 0.666
+ * 0.333 threshold <= pressure <= 0.666 threshold? => no adjustment
+ * 0.666 threshold <  pressure <= 1.000 threshold? => raise threshold
+ *                                                (halve distance to 1.0)
+ * 1.000 threshold <  pressure?                    => raise threshold
+ *                                                    (above pressure)
+ *
+ * The 95% maximum pressure prevents collection attempts when we are
+ * down to < 5% free heap capacity, to prevent futile hyperactive
+ * collection attempts when the heap is nearly full.  At this point we
+ * can only recover via passive garbage collection during reduction, or
+ * more likely fail due to heap exhaustion.
+ *
+ * The 60% minimum threshold prevents collection attempts when urgency
+ * to reclaim memory is low.
+ *
+ * Note that these capacity calculations are made based on the number
+ * of nodes, not their sizes--that would be a potential improvement.
+ */
+static const float MAX_HEAP_PRESSURE = 0.95;
+static const float MIN_HEAP_THRESHOLD = 0.6;
 
-float the_heap_pressure, the_heap_threshold = 0.6;
+/*
+ * These are not static; we reference them directly in a performance-
+ * critical part of the reduction loop to avoid function call overhead.
+ */
+float the_heap_pressure, the_heap_threshold = MIN_HEAP_THRESHOLD;
 
 static struct heap_stats the_heap_stats;
 
@@ -60,6 +89,18 @@ void node_heap_init(void)
 	update_heap_pressure();
 }
 
+/*
+ * After we install a node to the global environment, we no longer
+ * consider it part of the heap--the heap is only for active reductions
+ * not constants.  Reset the heap to its initial state.
+ */
+void node_heap_baseline(void)
+{
+	memset(&the_heap_stats, 0, sizeof the_heap_stats);
+	the_heap_threshold = MIN_HEAP_THRESHOLD;
+	update_heap_pressure();
+}
+
 void node_heap_calibrate(void)
 {
 	update_heap_pressure();
@@ -67,13 +108,17 @@ void node_heap_calibrate(void)
 	assert(the_heap_pressure <  1.0);
 	assert(the_heap_threshold >= MIN_HEAP_THRESHOLD);
 	assert(the_heap_threshold <  1.0);
-	if (the_heap_pressure > the_heap_threshold * 0.666)
-		the_heap_threshold += (1.0 - the_heap_threshold) / 2.0;
+	if (the_heap_pressure > the_heap_threshold)
+		the_heap_threshold = the_heap_pressure +
+					(1.0 - the_heap_pressure) / 2.0;
+	else if (the_heap_pressure > the_heap_threshold * 0.666)
+		the_heap_threshold +=	(1.0 - the_heap_threshold) / 2.0;
 	else if (the_heap_pressure < the_heap_threshold * 0.333) {
-		the_heap_threshold *= 0.666;
+		the_heap_threshold *=	0.666;
 		if (the_heap_threshold < MIN_HEAP_THRESHOLD)
 			the_heap_threshold = MIN_HEAP_THRESHOLD;
 	}
+	assert(the_heap_pressure < the_heap_threshold);
 }
 
 struct node *node_heap_alloc(size_t nslots)
@@ -83,14 +128,8 @@ struct node *node_heap_alloc(size_t nslots)
 	the_heap_stats.node_allocs++;
 	the_heap_stats.nodes_in_use++;
 	update_heap_pressure();
-#ifdef SLOT_COUNTS_SORTED
 	struct node *node = xmalloc(sizeof *node +
 				    nslots * sizeof node->slots[0]);
-#else
-	struct node *node = xmalloc(sizeof *node +
-				    (nslots < 2 ? 2 : nslots) *
-				    sizeof node->slots[0]);
-#endif
 	node->nslots = nslots;
 	node->prev = NULL;	/* for safety */
 	return node;

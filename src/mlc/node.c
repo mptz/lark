@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009-2024 Michael P. Touloumtzis.
+ * Copyright (c) 2009-2025 Michael P. Touloumtzis.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -23,7 +23,6 @@
 #include <assert.h>
 #include <stdio.h>
 
-#include <util/base64.h>
 #include <util/memutil.h>
 #include <util/message.h>
 
@@ -32,7 +31,6 @@
 #include "num.h"
 #include "memloc.h"
 #include "prim.h"
-#include "term.h"
 
 static struct node *node_alloc(enum node_variety variety, struct node *prev,
 			       int depth, size_t nslots)
@@ -91,11 +89,11 @@ struct node *NodeCell(struct node *prev, int depth, size_t n)
 	return node_alloc(NODE_CELL, prev, depth, n);
 }
 
-struct node *NodeFreeVar(struct node *prev, int depth, struct term *var)
+struct node *NodeConstant(struct node *prev, int depth, size_t index)
 {
 	struct node *node = node_alloc(NODE_VAR, prev, depth, 1);
-	node->slots[0].variety = SLOT_FREE;
-	node->slots[0].term = var;
+	node->slots[0].variety = SLOT_CONSTANT;
+	node->slots[0].index = index;
 	return node;
 }
 
@@ -152,6 +150,23 @@ struct node *NodeString(struct node *prev, int depth, const char *str)
 	return node;
 }
 
+struct node *NodeSubst(struct node *prev, int depth, struct node *subst)
+{
+	struct node *node = node_alloc(NODE_VAR, prev, depth, 1);
+	node->slots[0].variety = SLOT_SUBST;
+	node->slots[0].subst = subst;
+	subst->nref++;
+	return node;
+}
+
+struct node *NodeSymbol(struct node *prev, int depth, symbol_mt sym)
+{
+	struct node *node = node_alloc(NODE_VAL, prev, depth, 1);
+	node->slots[0].variety = SLOT_SYMBOL;
+	node->slots[0].sym = sym;
+	return node;
+}
+
 struct node *NodeTest(struct node *prev, int depth)
 {
 	/*
@@ -179,16 +194,18 @@ void node_deref(struct node *node)
 
 static void node_free_body(struct node *node)
 {
+	/*
+	 * First decrement reference count via the substitution.
+	 */
 	assert(node->variety == NODE_SENTINEL);
-	if (node->next == node) return;		/* already pinched */
-
-	/* if the body is intact, first dereference next... */
-	assert(node->nslots);
+	assert(node->nslots == 1);
 	assert(node->slots[0].variety == SLOT_SUBST);
-	assert(node->slots[0].subst == node->next);
-	node->slots[0].subst = NULL, node->next->nref--;
+	node->slots[0].subst->nref--;
 
-	/* then decrement references as we go */
+	/*
+	 * Then garbage-collect linked nodes.  These should all have
+	 * zero reference count if we properly collect left-to-right.
+	 */
 	node = node->next;
 	while (!done(node)) {
 		struct node *tmp = node->next;
@@ -200,8 +217,7 @@ static void node_free_body(struct node *node)
 
 void node_free(struct node *node)
 {
-	if (!node)
-		return;
+	if (!node) return;
 	assert(!node->nref);
 
 	switch (node->variety) {
@@ -288,162 +304,113 @@ void node_wipe_body(struct node *abs)
 	abs->slots[SLOT_ABS_BODY].subst = NULL;		/* wipe body */
 }
 
-static void node_list(const struct node *node, uintptr_t base,
-		      unsigned depth, bool star);
-static void node_list_helper(struct node *node, uintptr_t base, unsigned depth);
-
-static void node_list_addr(const struct node *node, intptr_t base,
-			   unsigned char *dst, size_t dstsize)
-{
-	intptr_t diff = ((intptr_t) (struct node *) node) - base;
-	diff = diff < 0 ? diff * -2 - 1 : diff * 2;
-	assert(diff >= 0);
-	base64_convert(diff, dst, dstsize);
-}
-
-static void
-node_list_header(const struct node *node, intptr_t base, unsigned depth)
-{
-	assert(depth >= node->depth);	/* we indent non-abstraction depth */
-	/*
-	 * XXX the node->nref test doesn't work for tests since the
-	 * consequent and alternative have nref 0, but we want to print
-	 * their addresses.  Brute forcing it until I have a better
-	 * solution.
-	 */
-	if (1 || node->nref) {
-		unsigned char buf [BASE64_CONVERT_BUFSIZE];
-		node_list_addr(node, base, buf, sizeof buf);
-		printf("%12s: ", buf);
-	} else
-		fputs("              ", stdout);
-	for (unsigned i = 0; i < depth; ++i)
-		fputs("____", stdout);
-}
-
 static void node_list_indent(unsigned depth)
 {
-	fputs("              ", stdout);
+	fputs("          ", stdout);
 	for (unsigned i = 0; i < depth; ++i)
-		fputs("    ", stdout);
+		fputs(".   ", stdout);
 }
 
-static void node_list_slot(struct slot slot, intptr_t base)
+static void node_list_slot(struct slot slot)
 {
-	unsigned char buf [BASE64_CONVERT_BUFSIZE];
 	switch (slot.variety) {
 	case SLOT_BOUND:	printf("bound[%d.%d]",
 				       slot.bv.up, slot.bv.across);
 				break;
-	case SLOT_FREE:		fputs("free[", stdout);
-				term_print(slot.term);
-				fputs("]", stdout);
+	case SLOT_CONSTANT:	printf("constant[%zu]", slot.index);
 				break;
 	case SLOT_NUM:		fputs("num[", stdout);
 				num_print(slot.num);
 				fputs("]", stdout);
 				break;
+	case SLOT_PARAM:	fputs(symtab_lookup(slot.name), stdout); break;
 	case SLOT_PRIM:		printf("prim[%s]", slot.prim->name); break;
 	case SLOT_STRING:	printf("str[%s]", slot.str); break;
-	case SLOT_SUBST:	node_list_addr(slot.subst, base,
-					       buf, sizeof buf);
-				printf("^%s", buf);
+	case SLOT_SYMBOL:	printf("#%s", symtab_lookup(slot.sym)); break;
+	case SLOT_BODY: case SLOT_SUBST:
+				printf("^%s", memloc(slot.subst));
 				break;
 	default:	panicf("Unhandled slot variety %d\n", slot.variety);
 	}
 }
 
 static void
-node_list_contents(const struct node *node, uintptr_t base, unsigned depth)
+node_list_contents(const struct node *node)
 {
 	switch (node->variety) {
+	case NODE_ABS:
+	case NODE_FIX:
+	case NODE_LET:
+		for (size_t i = 1; i < node->nslots; ++i) {
+			putchar(i == 1 ? '<' : ',');
+			node_list_slot(node->slots[i]);
+		}
+		fputs(">\n", stdout);
+		node_list_body(node->slots[0].subst);
+		return;
 	case NODE_CELL:
 		for (size_t i = 0; i < node->nslots; ++i) {
 			fputs(i == 0 ? "[" : " | ", stdout);
-			node_list_slot(node->slots[i], base);
+			node_list_slot(node->slots[i]);
 		}
 		fputs("]\n", stdout);
 		return;
 	case NODE_TEST:
-		assert(node->nslots == 5);
+		assert(node->nslots == 3);
 		putchar('[');
-		node_list_slot(node->slots[0], base);
+		node_list_slot(node->slots[0]);
 		fputs("? ", stdout);
-		node_list_slot(node->slots[2], base);
+		node_list_slot(node->slots[1]);
 		fputs(" | ", stdout);
-		node_list_slot(node->slots[4], base);
+		node_list_slot(node->slots[2]);
 		fputs("]\n", stdout);
+		node_list_body(node->slots[1].subst);
+		node_list_body(node->slots[2].subst);
+		return;
+	case NODE_SENTINEL:
+	case NODE_VAL:
+	case NODE_VAR:
+		assert(node->nslots == 1);
+		node_list_slot(node->slots[0]);
+		putchar('\n');
 		return;
 	default:
 		/* fall through... */;
 	}
 
-	assert(depth >= node->depth);	/* we indent non-abstraction depth */
-	if (node_is_abs(node)) {
-		for (size_t i = 1; i < node->nslots; ++i)
-			printf("%s%s", i == 1 ? "<" : ",",
-			       symtab_lookup(node->slots[i].name));
-		fputs(">\n", stdout);
-		/* body may have been wiped with node_wipe_body() */
-		if (node_abs_body(node))
-			node_list_helper(node_abs_body(node), base, depth + 1);
-		else
-			fputs("{collected}\n", stdout);
-		return;
-	}
 	putchar('\n');
-
 	for (size_t i = 0; i < node->nslots; ++i) {
-		node_list_indent(depth);
-		node_list_slot(node->slots[i], base);
+		node_list_indent(node->depth);
+		node_list_slot(node->slots[i]);
 		putchar('\n');
 	}
 }
 
-/*
- * The first node at toplevel and within each abstraction is a
- * "virtual substitution" for the value of the term as a whole,
- * denoted '*'.  Because it's associated with a nameless variable,
- * it can't be referenced--we confirm its reference count is 0 and
- * don't print its location.
- *
- * We can't check node->prev to determine whether this node is in
- * '*' position since we flip the direction of 'prev' pointers during
- * reduction and printing, so we have to be told by the caller.
- */
-static void node_list(const struct node *node, uintptr_t base,
-		      unsigned depth, bool star)
+static void node_list(const struct node *node)
 {
-	assert(depth >= node->depth);	/* we indent non-abstraction depth */
-	node_list_header(node, base, depth);
-	if (star) {
-		assert(node->nref == 0);
-		printf("*+%d\t", node->depth);
-	} else
-		printf("@+%d#%d\t", node->depth, node->nref);
-	node_list_contents(node, base, depth);
+	printf("%8s: ", memloc(node));
+	for (unsigned i = 0; i < node->depth; ++i)
+		fputs(node->variety == NODE_SENTINEL ? ".>>>" : ".___", stdout);
+
+	printf("@+%d#%d ", node->depth, node->nref);
+	node_list_contents(node);
 }
 
-/*
- * To avoid recursing down a (potentially very long) node list and
- * blowing the stack, we use a pointer-reversing traversal as we do
- * in reduction.  First reverse, then print on the way back.
- */
-static void node_list_helper(struct node *node, uintptr_t base, unsigned depth)
+void node_list_body(const struct node *node)
 {
-	assert(depth >= node->depth);	/* we indent non-abstraction depth */
-	struct node *rev, *tmp;
-	for (rev = NULL; node;
-	     tmp = node->prev, node->prev = rev, rev = node, node = tmp);
-	for (bool first = true; rev; first = false,
-	     tmp = rev->prev, rev->prev = node, node = rev, rev = tmp)
-		node_list(rev, base, depth, first);
-	assert(rev == NULL);
-}
+	if (!node) {
+		fputs("{collected}\n", stdout);	  /* see node_wipe_body() */
+		return;
+	}
 
-void node_list_rl(struct node *node)
-{
-	node_list_helper(node, (intptr_t) node, 0);
+	assert(node->variety == NODE_SENTINEL);
+	node_list(node);
+	for (node = node->next; !done(node); node = node->next)
+		node_list(node);
+	printf("%8s: ", memloc(node));
+	for (unsigned i = 0; i < node->depth; ++i)
+		fputs(".<<<", stdout);
+	putchar('\n');
 }
 
 static void node_print_body_contents(const struct node *node)
@@ -465,10 +432,11 @@ static void node_print_slot(struct slot slot)
 				break;
 	case SLOT_BOUND:	printf("$%d.%d", slot.bv.up, slot.bv.across);
 				break;
-	case SLOT_FREE:		term_print(slot.term); break;
+	case SLOT_CONSTANT:	printf("$%zu", slot.index); break;
 	case SLOT_NUM:		num_print(slot.num); break;
 	case SLOT_PRIM:		printf("'%s'", slot.prim->name); break;
 	case SLOT_STRING:	printf("\"%s\"", slot.str); break;
+	case SLOT_SYMBOL:	printf("#%s", symtab_lookup(slot.sym)); break;
 	case SLOT_SUBST:	printf("^%s", memloc(slot.subst)); break;
 	default:	panicf("Unhandled slot variety %d\n", slot.variety);
 	}
@@ -513,7 +481,7 @@ static void node_print_contents(const struct node *node)
 	if (node->nslots > 1) putchar(')');
 }
 
-static void node_print(const struct node *node)
+void node_print(const struct node *node)
 {
 	printf("[@%s+%d#%d ", memloc(node), node->depth, node->nref);
 	node_print_contents(node);
@@ -523,6 +491,7 @@ static void node_print(const struct node *node)
 void node_print_body(const struct node *node)
 {
 	assert(node->variety == NODE_SENTINEL);
+	node_print(node);
 	for (node = node->next; !done(node); node = node->next)
 		node_print(node);
 }

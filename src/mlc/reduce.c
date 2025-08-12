@@ -242,8 +242,13 @@ static void trace_eval(enum eval_dir dir, unsigned depth, struct node *head)
  *
  * Descent into an abstraction is a recursive traversal, i.e. we echo
  * right-to-left then left-to-right traversals on the abstraction body.
+ * Bodies of unevaluated tests are handled identically to abstractions.
+ *
+ * If we're performing an 'abstract reduction' (respecting abstractions)
+ * we don't enter them so left-to-right traversal does garbage collection
+ * only.
  */
-struct node *reduce(struct node *head)
+struct node *reduce(struct node *head, enum reduction reduction)
 {
 	struct node *outer = NULL,	/* containing abstraction links */
 		    *x, *y;		/* temporaries */
@@ -319,18 +324,11 @@ eval_rl:
 	case NODE_VAR:
 		/*
 		 * A SUBST node encountered during R-to-L traversal is a
-		 * name alias unless it's the leftmost node.  In such a
-		 * situation we forward references to this SUBST to its
-		 * its referent, avoiding renaming chains that might lead
-		 * us to miss redexes.
-		 *
-		 * XXX revisit this logic... what would have to change
-		 * to be able to rename even the leftmost?  Do we ever
-		 * want to do so?
+		 * name alias.  In such a situation we forward references
+		 * to this SUBST to its its referent, avoiding renaming
+		 * chains that might lead us to miss redexes.
 		 */
-		if (head->prev->variety != NODE_SENTINEL)
-			goto rule_rename;
-		break;
+		goto rule_rename;
 	default:
 		panicf("Unhandled node variety %d\n", head->variety);
 	}
@@ -449,10 +447,10 @@ do_subst:
 		 * to the environment/evaluation context via 'headr'.
 		 */
 		assert(slot.variety == SLOT_BOUND ||
-		       slot.variety == SLOT_FREE);
+		       slot.variety == SLOT_CONSTANT);
 		struct node *node = (slot.variety == SLOT_BOUND) ?
 			NodeBoundVar(NULL, depth, slot.bv.up, slot.bv.across) :
-			NodeFreeVar(NULL, depth, slot.term);
+			NodeConstant(NULL, depth, slot.index);
 		node->isfresh = true;
 		head->slots[i].subst = node;
 		head->slots[i].variety = SLOT_SUBST;
@@ -527,6 +525,12 @@ do_subst:
 			 * necessarily free the node itself, but we may be
 			 * able to free sub-components of it.  Currently
 			 * only implemented for abstractions.
+			 *
+			 * Why can't we simply remove and free it?  It may
+			 * be referenced by 'head' at this or a lower
+			 * abstraction depth.  We could free it if it's
+			 * at this abstraction depth, but for now we play
+			 * it safe.
 			 */
 			if (!node_is_abs(arg))
 				continue;
@@ -545,11 +549,6 @@ do_subst:
 			 *				appear in body, so
 			 *				'y' has no references
 			 *				from the reduced body.
-			 *
-			 * XXX If the node is equal to 'headr', we can free
-			 * it completely (including its body, if an
-			 * abstraction) and adjust 'headr' accordingly.
-			 * XXX this case is unimplemented!
 			 */
 			if (EVAL_STATS) the_eval_stats.quick_value_unref++;
 			node_wipe_body(arg);
@@ -653,6 +652,9 @@ rule_test:
 	/*
 	 * Connect the chosen subexpression (between 'x' and 'y') to the
 	 * evaluation environment in place of 'head', the redex.
+	 * Increment the reference count of 'x', the chosen branch's
+	 * left end; the node_free below will decrement it and we want
+	 * it to stay above 0.
 	 */
 	assert(head->backref);
 	x->backref = head->backref;
@@ -660,6 +662,7 @@ rule_test:
 	assert(head->nref == 1);
 	assert(x->nref == 1);
 	head->nref--;
+	x->nref++;
 	x->prev = head->prev;
 	x->prev->next = x;
 	y->next = head->next;
@@ -685,6 +688,7 @@ eval_lr:
 	if (TRACE_EVAL) trace_eval(LR, depth, head);
 	if (done(head)) goto rule_move_up;
 	if (!head->nref) goto rule_collect;
+	if (reduction != REDUCTION_DEEP) goto rule_move_right;
 
 	switch (head->variety) {
 	case NODE_ABS:
@@ -698,7 +702,7 @@ eval_lr:
 	}
 	/* fall through to rule_move_right... */
 
-/* rule_move_right: */
+rule_move_right:
 	/*
 	 * Move right without taking any other action.
 	 */

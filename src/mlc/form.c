@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009-2024 Michael P. Touloumtzis.
+ * Copyright (c) 2009-2025 Michael P. Touloumtzis.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -28,10 +28,12 @@
 #include <util/message.h>
 
 #include "form.h"
-#include "mlc.lex.h"
-#include "mlc.tab.h"
+#include "library.h"
 #include "num.h"
 #include "prim.h"
+#include "sourcefile.h"
+
+#include "mlc.tab.h"
 
 static struct form *form_alloc(enum form_variety variety,
 			       const struct YYLTYPE *loc)
@@ -48,12 +50,12 @@ static struct form *form_alloc(enum form_variety variety,
 	return form;
 }
 
-struct form *FormAbs(struct form *params, struct form *bodies)
+struct form *FormAbs(struct form *params, struct form *body)
 {
 	struct form *form = form_alloc(FORM_ABS, NULL);
 	form->abs.self = NULL;
 	form->abs.params = params;
-	form->abs.bodies = bodies;
+	form->abs.body = body;
 	return form;
 }
 
@@ -74,7 +76,7 @@ struct form *FormCell(struct form *elts)
 	return form;
 }
 
-struct form *FormDef(struct form *var, struct form *val)
+struct form *FormDefLocal(struct form *var, struct form *val)
 {
 	struct form *form = form_alloc(FORM_DEF, NULL);
 	form->def.var = var;
@@ -83,12 +85,12 @@ struct form *FormDef(struct form *var, struct form *val)
 }
 
 struct form *FormFix(struct form *self, struct form *params,
-		     struct form *bodies)
+		     struct form *body)
 {
 	struct form *form = form_alloc(FORM_FIX, NULL);
 	form->abs.self = self;
 	form->abs.params = params;
-	form->abs.bodies = bodies;
+	form->abs.body = body;
 	return form;
 }
 
@@ -132,17 +134,17 @@ struct form *FormPrim(const struct prim *prim, const struct YYLTYPE *loc)
 	return form;
 }
 
-struct form *FormSection(const char *huid, const struct YYLTYPE *loc)
-{
-	struct form *form = form_alloc(FORM_SECTION, loc);
-	form->huid = huid;
-	return form;
-}
-
 struct form *FormString(const char *str)
 {
 	struct form *form = form_alloc(FORM_STRING, NULL);
 	form->str = str;	/* take ownership */
+	return form;
+}
+
+struct form *FormSymbol(symbol_mt symbol)
+{
+	struct form *form = form_alloc(FORM_SYMBOL, NULL);
+	form->id = symbol;
 	return form;
 }
 
@@ -190,7 +192,7 @@ void form_free(struct form *form)
 {
 	switch (form->variety) {
 	case FORM_ABS:	form_free_rl(form->abs.params);
-			form_free_rl(form->abs.bodies); break;
+			form_free(form->abs.body); break;
 	case FORM_APP:	form_free(form->app.fun);
 			form_free_rl(form->app.args); break;
 	case FORM_CELL:	form_free_rl(form->cell.elts); break;
@@ -198,7 +200,7 @@ void form_free(struct form *form)
 			form_free(form->def.val); break;
 	case FORM_FIX:	form_free(form->abs.self);
 			form_free_rl(form->abs.params);
-			form_free_rl(form->abs.bodies); break;
+			form_free(form->abs.body); break;
 	case FORM_LET:	form_free_rl(form->let.defs);
 			form_free(form->let.body); break;
 	case FORM_NUM:	/* nada */; break;
@@ -206,8 +208,8 @@ void form_free(struct form *form)
 	case FORM_OP2:	form_free(form->op2.lhs);
 			form_free(form->op2.rhs); break;
 	case FORM_PRIM:	/* nada */; break;
-	case FORM_SECTION: xfree(form->huid); break;
 	case FORM_STRING: xfree(form->str); break;
+	case FORM_SYMBOL:	/* nada */; break;
 	case FORM_TEST:	form_free(form->test.pred);
 			form_free_rl(form->test.csq);
 			form_free_rl(form->test.alt); break;
@@ -264,7 +266,7 @@ static void form_print_helper(const struct form *form, bool spine, bool nest)
 		form_print_lr(form->abs.params, ", ");
 		putchar('.');
 		putchar(' ');
-		form_print_lr(form->abs.bodies, ", ");
+		form_print_helper(form->abs.body, spine, false);
 		putchar(']');
 		break;
 	case FORM_APP:
@@ -353,7 +355,7 @@ static void form_print_helper(const struct form *form, bool spine, bool nest)
 		form_print_lr(form->abs.params, ", ");
 		putchar('.');
 		putchar(' ');
-		form_print_lr(form->abs.bodies, ", ");
+		form_print_helper(form->abs.body, spine, false);
 		putchar(']');
 		break;
 	case FORM_LET:
@@ -377,11 +379,11 @@ static void form_print_helper(const struct form *form, bool spine, bool nest)
 	case FORM_PRIM:
 		fputs(form->prim->name, stdout);
 		break;
-	case FORM_SECTION:
-		printf("section #%s.\n", form->huid);
-		break;
 	case FORM_STRING:
 		printf("\"%s\"", form->str);
+		break;
+	case FORM_SYMBOL:
+		printf("#%s", symtab_lookup(form->id));
 		break;
 	case FORM_TEST:
 		putchar('[');

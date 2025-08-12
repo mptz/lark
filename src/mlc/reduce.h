@@ -1,7 +1,7 @@
 #ifndef LARK_MLC_REDUCE_H
 #define LARK_MLC_REDUCE_H
 /*
- * Copyright (c) 2009-2022 Michael P. Touloumtzis.
+ * Copyright (c) 2009-2025 Michael P. Touloumtzis.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -24,7 +24,16 @@
 
 struct node;
 
-extern struct node *reduce(struct node *node);
+/*
+ * Deep reduction penetrates ("reduces under") abstractions and other
+ * deferred subexpressions; surface reduction does not.  The standard
+ * terminology here is strong/weak reduction but I'm experimenting with
+ * names which are more evocative of the reduction behavior, especially
+ * for those who aren't familiar with the literature.
+ */
+enum reduction { REDUCTION_DEEP, REDUCTION_SURFACE };
+
+extern struct node *reduce(struct node *node, enum reduction reduction);
 extern void print_eval_stats(void);
 extern void reset_eval_stats(void);
 

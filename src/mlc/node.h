@@ -37,37 +37,40 @@ enum slot_variety {
 	SLOT_INVALID,
 	SLOT_BODY,	/* subexpression e.g. function body */
 	SLOT_BOUND,	/* bound variable, De Bruijn indexed */
-	SLOT_FREE,	/* free variable, as uninterpreted symbol */
+	SLOT_CONSTANT,	/* opaque constant in environment */
 	SLOT_NULL,	/* placeholder for missing value */
 	SLOT_NUM,	/* floating-point number */
 	SLOT_PARAM,	/* formal parameter to abstraction */
 	SLOT_PRIM,	/* primitive (built-in) function */
 	SLOT_STRING,	/* nul-terminated string */
+	SLOT_SYMBOL,	/* self-evaluating symbol */
 	SLOT_SUBST,	/* explicit substitution, as node pointer */
 } __attribute__ ((packed));
 
 struct slot {
 	enum slot_variety variety;
 	union {
-		struct { int up, across; } bv;
-		symbol_mt name;		/* free vars & formal params */
-		double num;
-		const struct prim *prim;
-		struct node *subst;
-		const char *str;
-		struct term *term;
+		struct { int up, across; } bv;	/* bound variable */
+		size_t index;			/* constant from env */
+		symbol_mt name;			/* formal parameter */
+		double num;			/* floating-point number */
+		const struct prim *prim;	/* primitive function */
+		const char *str;		/* nul-terminated string */
+		struct node *subst;		/* body, extern, subst */
+						/* XXX rename to node? */
+		symbol_mt sym;			/* self-evaluating symbol */
 	};
 };
 
 /*
  * We essentially support three types of references: bound variables,
- * free variables, and substitutions (pointers to nodes).  Application
+ * constants, and substitutions (pointers to nodes).  Application
  * nodes contain only references of these types--they don't directly
- * contain values (at present).
+ * contain values (at present).  XXX explore for atomics.
  */
 static inline bool slot_is_ref(const struct slot slot)
 	{ return slot.variety == SLOT_BOUND ||
-		 slot.variety == SLOT_FREE ||
+		 slot.variety == SLOT_CONSTANT ||
 		 slot.variety == SLOT_SUBST; }
 
 /*
@@ -104,7 +107,7 @@ enum node_variety {
  * this ordinary parameter may be the self-reference.
  *
  * An *application* node contains one or more slots of the following
- * types: SLOT_BOUND, SLOT_FREE, SLOT_NUM, SLOT_PRIM, SLOT_SUBST.  An
+ * types: SLOT_BOUND, SLOT_CONSTANT, SLOT_NUM, SLOT_PRIM, SLOT_SUBST.  An
  * application node with a single slot represents an atomic value or
  * variable; with two or more slots slot[0] contains the function or
  * primitive operation and slots[1..] contain the arguments.
@@ -148,19 +151,24 @@ static inline void node_pinch(struct node *node)
 static inline void node_remove(struct node *node)
 	{ node->prev->next = node->next; node->next->prev = node->prev; }
 
-struct node *NodeAbs(struct node *prev, int depth, struct node *body,
-		     size_t nparams, symbol_mt *params);
-struct node *NodeApp(struct node *prev, int depth, size_t nargs);
-struct node *NodeBoundVar(struct node *prev, int depth, int up, int across);
-struct node *NodeCell(struct node *prev, int depth, size_t n);
-struct node *NodeFreeVar(struct node *prev, int depth, struct term *var);
-struct node *NodeGeneric(struct node *prev, int depth, size_t nslots);
-struct node *NodeLet(struct node *prev, int depth, size_t ndefs);
-struct node *NodeNum(struct node *prev, int depth, double num);
-struct node *NodePrim(struct node *prev, int depth, const struct prim *prim);
-struct node *NodeSentinel(struct node *next, struct node *prev, int depth);
-struct node *NodeString(struct node *prev, int depth, const char *str);
-struct node *NodeTest(struct node *prev, int depth);
+extern struct node *NodeAbs(struct node *prev, int depth, struct node *body,
+			    size_t nparams, symbol_mt *params);
+extern struct node *NodeApp(struct node *prev, int depth, size_t nargs);
+extern struct node *NodeBoundVar(struct node *prev, int depth,
+				 int up, int across);
+extern struct node *NodeCell(struct node *prev, int depth, size_t n);
+extern struct node *NodeConstant(struct node *prev, int depth, size_t index);
+extern struct node *NodeGeneric(struct node *prev, int depth, size_t nslots);
+extern struct node *NodeLet(struct node *prev, int depth, size_t ndefs);
+extern struct node *NodeNum(struct node *prev, int depth, double num);
+extern struct node *NodePrim(struct node *prev, int depth,
+			     const struct prim *prim);
+extern struct node *NodeSentinel(struct node *next, struct node *prev,
+				 int depth);
+extern struct node *NodeString(struct node *prev, int depth, const char *str);
+extern struct node *NodeSubst(struct node *prev, int depth, struct node *subst);
+extern struct node *NodeSymbol(struct node *prev, int depth, symbol_mt sym);
+extern struct node *NodeTest(struct node *prev, int depth);
 
 extern int node_abs_depth(const struct node *node);
 extern const struct node *node_chase_lhs(const struct node *node);
@@ -169,13 +177,13 @@ extern void node_free(struct node *node);
 extern void node_insert_after(struct node *node, struct node *dest);
 extern void node_recycle(struct node *node);
 extern void node_replace(struct node *node, struct node *dest);
+extern struct node *node_take_body(struct node *abs);
 extern void node_wipe_body(struct node *abs);
 
-	/* XXX {list,print}_rl are non-const b/c ptr reversing */
-extern void node_list_rl(struct node *node);
+extern void node_list_body(const struct node *node);
+extern void node_print(const struct node *node);
 extern void node_print_body(const struct node *node);
 extern void node_print_after(const struct node *node);
 extern void node_print_until(const struct node *node);
-extern struct node *node_take_body(struct node *abs);
 
 #endif /* LARK_MLC_NODE_H */

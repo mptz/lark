@@ -23,7 +23,7 @@
 #include <assert.h>
 
 #include "beta.h"
-#include "heap.h"	/* XXX awkward */
+#include "heap.h"
 #include "node.h"
 #include "subst.h"
 

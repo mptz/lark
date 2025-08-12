@@ -1,6 +1,6 @@
 %{
 /*
- * Copyright (c) 2009-2024 Michael P. Touloumtzis.
+ * Copyright (c) 2009-2025 Michael P. Touloumtzis.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -23,11 +23,15 @@
 
 #include <stdlib.h>
 
+#include <util/message.h>
+#include <util/symtab.h>
+
+#include "binder.h"
 #include "env.h"
 #include "form.h"
-#include "mlc.lex.h"
-#include "parse.h"
+#include "mlc.h"
 #include "prim.h"
+#include "sourcefile.h"
 #include "stmt.h"
 
 #ifndef YYERROR_VERBOSE
@@ -38,25 +42,27 @@
 %union {
 	struct form *form;
 	const struct prim *prim;
-	const char *huid;
+	symbol_mt sym;
+	unsigned u;
 }
 
 %{
-extern int mlc_yylex(YYSTYPE *valp, YYLTYPE *locp, void *scanner);
-static int mlc_yyerror(YYLTYPE *locp, mlc_yyscan_t scanner, const char *s);
+static int mlc_yyerror(YYLTYPE *locp, struct sourcefile *sf, const char *s);
+static inline struct stmt *locs(struct stmt *stmt, struct YYLTYPE *locp)
+	{ stmt->line0 = locp->first_line; stmt->line1 = locp->last_line;
+	  return stmt; }
 %}
 
-%define api.pure
+%define api.pure full
+%define api.push-pull push
 %define parse.error verbose
 %locations
-%lex-param {void *scanner}
-%parse-param {mlc_yyscan_t scanner}
+%parse-param {struct sourcefile *sourcefile}
 
 %token CMD_ECHO
 %token DEF
 %token ENV_DUMP
-%token INCLUDE
-%token LIST
+%token PUBLIC
 
 %nonassoc OP2C			/* binary comparison operators */
 %left OP2A			/* binary additive operators */
@@ -64,11 +70,15 @@ static int mlc_yyerror(YYLTYPE *locp, mlc_yyscan_t scanner, const char *s);
 %precedence OP1			/* unary operators */
 %type <prim> OP2C OP2A OP2M OP1
 
-%token <huid> HUID
+%token <sym> HUID INSPECT REQUIRE SECTION
+%token <sym> CONCEAL REVEAL
 %token <prim> PRIM
-%token <form> NUM STRING VARIABLE
-%token <form> LET SECTION
+%token <form> NUM STRING SYMBOL VARIABLE
 
+%token <form> KW_DEEP KW_DEF KW_LET KW_LIFTING KW_LITERAL
+%token <form> KW_OPAQUE KW_SURFACE KW_VAL
+
+%type <u> bflag bflags vflag
 %type <form> term terms seq expr factor arith
 %type <form> let assigns assign
 %type <form> app app1
@@ -83,19 +93,65 @@ input	: %empty
 				   which must each be terminated */
 
 stmts	: '.'
+	| marker
 	| stmt '.'
+	| stmts marker
 	| stmts stmt '.'
 	;
 
-stmt	: term 			{ stmt_reduce($1); form_free($1); }
-	| CMD_ECHO		{ putchar('\n'); }
-	| CMD_ECHO STRING	{ fputs($2->str, stdout); putchar('\n'); }
+stmt	: term 
+		{ sourcefile_add(sourcefile,
+			locs(StmtVal($1, BINDING_DEEP), &@$)); }
+	| CMD_ECHO STRING
+		{ sourcefile_add(sourcefile, locs(StmtEcho($2), &@$)); }
+	| CONCEAL var
+		{ sourcefile_add(sourcefile,
+				 locs(StmtConceal($2->var.name), &@$));
+		  form_free($2); }
+	| KW_DEF '{' bflags '}' var DEF term
+		{ sourcefile_add(sourcefile, locs(StmtDef($5, $7, $3), &@$)); }
+	| KW_DEF '{' bflags ',' '}' var DEF term
+		{ sourcefile_add(sourcefile, locs(StmtDef($6, $8, $3), &@$)); }
+	| REVEAL var
+		{ sourcefile_add(sourcefile,
+				 locs(StmtReveal($2->var.name), &@$));
+		  form_free($2); }
 	| ENV_DUMP		{ env_dump(NULL); }
 	| ENV_DUMP STRING	{ env_dump($2->str); }
-	| INCLUDE STRING	{ if (parse_include($2->str)) YYERROR; }
-	| LIST term 		{ stmt_list($2); }
-	| SECTION HUID		{ printf("section: #%s.\n", $2); }
-	| var DEF term 		{ stmt_define($1->var.name, $3); }
+	| var DEF term
+		{ sourcefile_add(sourcefile, locs(StmtDef($1, $3, 0), &@$)); }
+	| KW_VAL '{' vflag '}' term
+		{ sourcefile_add(sourcefile, locs(StmtVal($5, $3), &@$)); }
+	| KW_VAL '{' vflag ',' '}' term
+		{ sourcefile_add(sourcefile, locs(StmtVal($6, $3), &@$)); }
+	;
+
+bflags	: %empty		{ $$ = 0; }
+	| bflag			{ $$ = $1; }
+	| bflags ',' bflag	{ $$ = $1 | $3; }
+	;
+
+bflag	: KW_DEEP		{ $$ = BINDING_DEEP; }
+	| KW_LIFTING		{ $$ = BINDING_LIFTING; }
+	| KW_LITERAL		{ $$ = BINDING_LITERAL; }
+	| KW_SURFACE		{ $$ = 0; }
+	| KW_OPAQUE		{ $$ = BINDING_OPAQUE; }
+	;
+
+vflag	: %empty		{ $$ = BINDING_DEEP; }
+	| KW_DEEP		{ $$ = BINDING_DEEP; }
+	| KW_LITERAL		{ $$ = BINDING_LITERAL; }
+	| KW_SURFACE		{ $$ = 0; }
+	;
+
+marker	: INSPECT
+		{ sourcefile_add(sourcefile, locs(StmtInspect($1), &@$)); }
+	| PUBLIC
+		{ sourcefile_add(sourcefile, locs(StmtPublic(), &@$)); }
+	| REQUIRE
+		{ sourcefile_add(sourcefile, locs(StmtRequire($1), &@$)); }
+	| SECTION
+		{ sourcefile_add(sourcefile, locs(StmtSection($1), &@$)); }
 	;
 
 /*
@@ -129,10 +185,10 @@ seq	: expr
 	| seq ';' expr		{ $$ = FormApp($3, $1, FORM_SYNTAX_POSTFIX); };
 
 expr	: arith | let;
-let	: LET '{' assigns '}' expr		{ $$ = FormLet($3, $5); }
-	| LET '{' assigns '.' '}' expr		{ $$ = FormLet($3, $6); };
+let	: KW_LET '{' assigns '}' expr		{ $$ = FormLet($3, $5); }
+	| KW_LET '{' assigns '.' '}' expr	{ $$ = FormLet($3, $6); };
 assigns	: assign | assigns '.' assign		{ $3->prev = $1; $$ = $3; };
-assign	: var DEF term				{ $$ = FormDef($1, $3); };
+assign	: var DEF term				{ $$ = FormDefLocal($1, $3); };
 
 arith	: arith OP2C arith	{ $$ = FormOp2($2, $1, $3); }
 	| arith OP2A arith	{ $$ = FormOp2($2, $1, $3); }
@@ -146,8 +202,8 @@ arith	: arith OP2C arith	{ $$ = FormOp2($2, $1, $3); }
 
 factor	: abs | fix | cell | test | app | base;
 
-abs	: '[' params '.' terms ']'		{ $$ = FormAbs($2, $4); };
-fix	: '[' var '!' params '.' terms ']'	{ $$ = FormFix($2, $4, $6); };
+abs	: '[' params '.' term ']'		{ $$ = FormAbs($2, $4); };
+fix	: '[' var '!' params '.' term ']'	{ $$ = FormFix($2, $4, $6); };
 params	: var | params ',' var			{ $3->prev = $1; $$ = $3; };
 cell	: '[' ']'				{ $$ = FormCell(NULL); }
 	| '[' elems ']'				{ $$ = FormCell($2); };
@@ -172,23 +228,24 @@ pack	: '(' ')'		{ $$ = NULL; }
 	| '(' terms ')'		{ $$ = $2; }
 	| '(' terms ',' ')'	{ $$ = $2; }
 
-base	: NUM | string | prim | var | pack;
+base	: NUM | SYMBOL | string | prim | var | pack;
 
 string	: STRING | string STRING	{ $$ = FormStringConcat($1, $2); };
 prim	: PRIM			{ $$ = FormPrim($1, &@1); };
 var	: VARIABLE | keyword | blank;
-keyword	: LET | SECTION;
+keyword	: KW_DEEP | KW_DEF | KW_LET | KW_LIFTING | KW_LITERAL
+	| KW_OPAQUE | KW_SURFACE | KW_VAL;
 blank	: '_'			{ $$ = FormVar(the_placeholder_symbol); };
 
 %%
 /* Additional C code section */
 
-static int mlc_yyerror(YYLTYPE *locp, void *scanner, const char *s)
+static int mlc_yyerror(YYLTYPE *locp, struct sourcefile *sf, const char *s)
 {
 	if (locp->first_line == locp->last_line)
-		fprintf(stderr, "Parse error: %d: %s\n", locp->first_line, s);
+		errf("Parse error: %d: %s\n", locp->first_line, s);
 	else
-		fprintf(stderr, "Parse error: %d-%d: %s\n",
-			locp->first_line, locp->last_line, s);
+		errf("Parse error: %d-%d: %s\n",
+		     locp->first_line, locp->last_line, s);
 	return 0;
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009-2022 Michael P. Touloumtzis.
+ * Copyright (c) 2009-2025 Michael P. Touloumtzis.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -25,32 +25,140 @@
 #include <sys/time.h>
 #include <unistd.h>
 
+#include <util/memutil.h>
 #include <util/message.h>
 
+#include "binder.h"
 #include "env.h"
 #include "form.h"
 #include "heap.h"
 #include "flatten.h"
 #include "interpret.h"
+#include "library.h"
 #include "mlc.h"
 #include "node.h"
 #include "readback.h"
 #include "reduce.h"
 #include "resolve.h"
+#include "sourcefile.h"
 #include "stmt.h"
 #include "term.h"
 #include "unflatten.h"
 
-static void node_listing(const char *label, struct node *node)
+static struct stmt *stmt_alloc(enum stmt_variety variety)
 {
-	if (quiet_setting)
-		return;
+	struct stmt *stmt = xmalloc(sizeof *stmt);
+	stmt->variety = variety;
+	stmt->line0 = stmt->line1 = -1;
+	return stmt;
+}
 
-	fputs(label, stdout);
-	putchar(':');
+struct stmt *StmtConceal(symbol_mt id)
+{
+	struct stmt *stmt = stmt_alloc(STMT_CONCEAL);
+	stmt->sym = id;
+	return stmt;
+}
+
+struct stmt *StmtDef(struct form *var, struct form *val, unsigned flags)
+{
+	struct stmt *stmt = stmt_alloc(STMT_DEF);
+	stmt->def.var = var;
+	stmt->def.val = val;
+	stmt->def.flags = flags;
+	return stmt;
+}
+
+struct stmt *StmtEcho(struct form *str)
+{
+	struct stmt *stmt = stmt_alloc(STMT_ECHO);
+	assert(str->variety == FORM_STRING);
+	stmt->form = str;
+	return stmt;
+}
+
+struct stmt *StmtInspect(symbol_mt id)
+{
+	struct stmt *stmt = stmt_alloc(STMT_INSPECT);
+	assert(id != the_empty_symbol);
+	stmt->sym = id;
+	return stmt;
+}
+
+struct stmt *StmtPublic(void)
+{
+	return stmt_alloc(STMT_PUBLIC);
+}
+
+struct stmt *StmtRequire(symbol_mt id)
+{
+	struct stmt *stmt = stmt_alloc(STMT_REQUIRE);
+	assert(id != the_empty_symbol);
+	stmt->sym = id;
+	return stmt;
+}
+
+struct stmt *StmtReveal(symbol_mt id)
+{
+	struct stmt *stmt = stmt_alloc(STMT_REVEAL);
+	stmt->sym = id;
+	return stmt;
+}
+
+struct stmt *StmtSection(symbol_mt id)
+{
+	struct stmt *stmt = stmt_alloc(STMT_SECTION);
+	stmt->sym = id;
+	return stmt;
+}
+
+struct stmt *StmtVal(struct form *val, unsigned flags)
+{
+	struct stmt *stmt = stmt_alloc(STMT_VAL);
+	stmt->val.val = val;
+	stmt->val.flags = flags;
+	return stmt;
+}
+
+void stmt_free(struct stmt *stmt)
+{
+	switch (stmt->variety) {
+	case STMT_DEF:	form_free(stmt->def.var);
+			form_free(stmt->def.val);
+			break;
+	case STMT_ECHO:
+			form_free(stmt->form);
+			break;
+	case STMT_VAL:
+			form_free(stmt->val.val);
+			break;
+	case STMT_CONCEAL:
+	case STMT_INSPECT:
+	case STMT_PUBLIC:
+	case STMT_REQUIRE:
+	case STMT_REVEAL:
+	case STMT_SECTION:
+			/* nada */
+			break;
+	default: panicf("Unhandled stmt variety %d\n", stmt->variety);
+	}
+	stmt->variety = STMT_INVALID;	/* in case of accidental reuse */
+	xfree(stmt);
+}
+
+static void form_labeled_print(const char *label, const struct form *form)
+{
+	printf("%s: ", label);
+	form_print(form);
+	putchar('\n');
+}
+
+static void node_labeled_print(const char *label, const struct node *node)
+{
+	printf("%s:", label);
 	if (listing_setting) {
 		putchar('\n');
-		node_list_rl(node);
+		node_list_body(node);
 	} else {
 		putchar(' ');
 		node_print_body(node);
@@ -58,108 +166,194 @@ static void node_listing(const char *label, struct node *node)
 	}
 }
 
-void stmt_define(symbol_mt name, struct form *form)
+static void term_labeled_print(const char *label, const struct term *term)
 {
+	printf("%s: ", label);
+	term_print(term);
+	putchar('\n');
+}
+
+static void sanity_check_flatten(const struct node *node)
+{
+	assert(node);
+	assert(node->variety == NODE_SENTINEL);
+}
+
+static struct node *do_flatten(const struct term *term)
+{
+	struct node *node = flatten(term);
+	sanity_check_flatten(node);
+	if (!quiet_setting) node_labeled_print("flat", node);
+	return node;
+}
+
+static void sanity_check_reduction(const struct node *node)
+{
+	assert(node);
+	assert(node->variety == NODE_SENTINEL);
+	assert(node->nslots == 1);
+	assert(node->slots[0].variety == SLOT_SUBST);
+	assert(node->slots[0].subst->nref > 0);
+
 	/*
-	 * Definition currently uses resolve, which lifts the form;
-	 * free variables which reference definitions in the global
-	 * environment are converted to bound variables via abstraction
-	 * while other free variables are left unchanged.  This ensures
-	 * all values in the global environment are closed and thus can
-	 * be substituted without further closing/expansion.
+	 * If the sentinel's substitution doesn't point to the leftmost
+	 * node in the sentinel's list, the entire reduction must have
+	 * yielded a reference to a previously defined global environment
+	 * variable.  In this case this node's linked list should have
+	 * been fully garbage collected.
 	 */
+	if (node->next != node->slots[0].subst) {
+		assert(node->next == node->prev);
+		assert(node->next == node);
+	}
+}
+
+static struct node *timed_reduction(struct node *node, enum reduction reduction)
+{
+	struct timeval t0, t1;
+	gettimeofday(&t0, NULL);
+	node = reduce(node, reduction);
+	gettimeofday(&t1, NULL);
+	sanity_check_reduction(node);
+
+	if (!quiet_setting) {
+		long elapsed = (t1.tv_sec - t0.tv_sec) * 1000000 +
+			       (t1.tv_usec - t0.tv_usec);
+		printf("-dt-: %.6fs\n", elapsed / 1000000.0);
+		node_labeled_print("eval", node);
+	}
+
+	return node;
+}
+
+/*
+ * Define a value in the global environment.  First resolve the form
+ * to a term, then flatten to a node, then perform a shallow (abstract)
+ * reduction.  Install the resulting term in the global environment.
+ */
+static int stmt_define(symbol_mt name, struct form *form, unsigned flags)
+{
+	if (!quiet_setting) form_labeled_print("form", form);
+
 	struct term *body = resolve(form);
-	if (!body) return;	/* error already printed */
+	if (!body) return -1;	/* error already printed */
+	if (!quiet_setting) term_labeled_print("body", body);
 
-	/*
-	 * Note that this doesn't allow for recursive definitions;
-	 * if the form references the defined name, it will be added
-	 * to the environment as a free variable and this definition
-	 * will fail.
-	 */
-	if (!env_define(name, body).var)
-		fprintf(stderr, "Error: Name already exists: %s\n",
-			symtab_lookup(name));
-}
+	assert(the_current_sourcefile);
+	symbol_mt space = the_current_sourcefile->namespace;
+	struct binder *binder;
 
-void stmt_list(struct form *form)
-{
-	fputs("form: ", stdout);
-	form_print(form);
-	putchar('\n');
-
-	struct term *term = resolve(form);
-	if (!term)
-		return;
-	if (!quiet_setting) {
-		fputs("term: ", stdout);
-		term_print(term);
-		putchar('\n');
+	if (flags & BINDING_LIFTING) {
+		/*
+		 * Don't flatten and convert to a node, instead install
+		 * in the environment as a term constant.  Referencing this
+		 * constant will trigger lifting.
+		 */
+		binder = env_install(name, space, body);
+		if (!binder) {
+			errf("Failed to define '%s'\n", symtab_lookup(name));
+			return -1;
+		}
+		goto apply_flags;
 	}
 
-	struct node *node = flatten(term);
-	node_listing("flat", node->prev);
-	node_free(node);
-
-	fputs("==================================="
-	      "===================================\n", stdout);
-}
-
-void stmt_reduce(struct form *form)
-{
-	fputs("form: ", stdout);
-	form_print(form);
-	putchar('\n');
-
-	struct term *term = resolve(form);
-	if (!term)
-		return;
-	if (!quiet_setting) {
-		fputs("term: ", stdout);
-		term_print(term);
-		putchar('\n');
-	}
-
-	struct node *node = flatten(term);
-	node_listing("flat", node);
+	struct node *node = do_flatten(body);
 
 	/* XXX should have option for this? */
 	reset_eval_stats();
 	reset_heap_stats();
 
-	struct timeval t0, t;
-	gettimeofday(&t0, NULL);
-	node = reduce(node);
-	assert(node);
-	gettimeofday(&t, NULL);
+	if (!(flags & BINDING_LITERAL)) {
+		node = timed_reduction(node, (flags & BINDING_DEEP) ?
+			REDUCTION_DEEP : REDUCTION_SURFACE);
+	}
 
-	node_listing("eval", node);
+	if (!quiet_setting) {
+		print_eval_stats();
+		print_heap_stats();
+	}
+
+	binder = env_define(name, space, node);
+	node_heap_baseline();
+	if (!binder) {
+		errf("Failed to define '%s'\n", symtab_lookup(name));
+		return -1;
+	}
+
+apply_flags:
+	assert(binder);
+	if (flags & BINDING_OPAQUE)
+		binder->flags |= BINDING_OPAQUE;
+	return 0;
+}
+
+static void stmt_reduce(struct form *form, unsigned flags)
+{
+	form_labeled_print("form", form);
+
+	struct term *term = resolve(form);
+	if (!term) return;	/* error already printed */
+	if (!quiet_setting) term_labeled_print("term", term);
+
+	struct node *node = do_flatten(term);
+
+	/* XXX should have option for this? */
+	reset_eval_stats();
+	reset_heap_stats();
+
+	/*
+	 * Map flags to a reduction strategy (messy, since bindings
+	 * and values take different sets of flags and have different
+	 * defaults).
+	 */
+	if (!(flags & BINDING_LITERAL)) {
+		node = timed_reduction(node, (flags & BINDING_DEEP) ?
+			REDUCTION_DEEP : REDUCTION_SURFACE);
+	}
 
 	term = unflatten(node);
 	assert(term);
-	node_free(node);
-	node = NULL;
-	if (!quiet_setting) {
-		fputs("term: ", stdout);
-		term_print(term);
-		putchar('\n');
-	}
+	node_free(node), node = NULL;
+	if (!quiet_setting) term_labeled_print("term", term);
 
 	form = readback(term);
-	fputs("norm: ", stdout);
-	form_print(form);
-	putchar('\n');
-
+	form_labeled_print("norm", form);
 	interpret(term);
 
-	long elapsed = (t.tv_sec - t0.tv_sec) * 1000000 +
-		       (t.tv_usec - t0.tv_usec);
-	if (!quiet_setting) {
-		printf("dt: %.6fs\n", elapsed / 1000000.0);
+	if (!quiet_setting && !(flags & BINDING_LITERAL)) {
 		print_eval_stats();
-		fflush(stdout);		/* XXX move up */
 		print_heap_stats();
 	}
 	fputs("==================================="
 	      "===================================\n", stdout);
+}
+
+void stmt_eval(const struct stmt *stmt)
+{
+	switch (stmt->variety) {
+	case STMT_CONCEAL: {
+		struct binder *binder = env_lookup(stmt->sym,
+			&the_current_sourcefile->namespaces);
+		if (binder) binder->flags |= BINDING_OPAQUE;
+		break;
+	}
+	case STMT_DEF:
+		stmt_define(stmt->def.var->var.name, stmt->def.val,
+			    stmt->def.flags);
+		break;
+	case STMT_ECHO:
+		fputs(stmt->form->str, stdout);
+		putchar('\n');
+		break;
+	case STMT_REVEAL: {
+		struct binder *binder = env_lookup(stmt->sym,
+			&the_current_sourcefile->namespaces);
+		if (binder) binder->flags &= ~BINDING_OPAQUE;
+		break;
+	}
+	case STMT_VAL:
+		stmt_reduce(stmt->val.val, stmt->val.flags);
+		break;
+	default: panicf("Unhandled stmt variety %d\n", stmt->variety);
+	}
 }

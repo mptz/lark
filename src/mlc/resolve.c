@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009-2024 Michael P. Touloumtzis.
+ * Copyright (c) 2009-2025 Michael P. Touloumtzis.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -21,85 +21,84 @@
  */
 
 #include <assert.h>
-#include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
 
 #include <util/memutil.h>
 #include <util/message.h>
 #include <util/wordbuf.h>
+#include <util/wordtab.h>
 
+#include "binder.h"
 #include "env.h"
 #include "form.h"
-#include "memloc.h"
-#include "node.h"
+#include "library.h"
+#include "mlc.h"
 #include "prim.h"
+#include "sourcefile.h"
 #include "term.h"
 
 /*
- * Bind (some) free variables in the given term.  No effect on already-
+ * Bind (specified) constants in the given term, i.e. convert them to
  * bound variables.  Binds free variables at a uniform abstraction height
- * (immediately outside this term) i.e. to the formal parameters of an
- * abstraction containing this term as its body.  Free variables which
- * don't have definitions in the global environment are left as-is.
+ * (immediately outside this term) i.e. to the binders of a let-expression
+ * containing this term as its body.  Free variables not included in 'vars'
+ * are left as-is.
  */
 static struct term *term_bind(struct term *term, int depth,
-			      size_t nformals, symbol_mt *formals)
+			      size_t nrefs, symbol_mt *vars)
 {
 	switch (term->variety) {
 	case TERM_ABS:
 	case TERM_FIX:
-		for (size_t i = term->abs.nbodies; i--; /* nada */)
-			term->abs.bodies[i] =
-				term_bind(term->abs.bodies[i], depth + 1,
-					  nformals, formals);
+		term->abs.body = term_bind(term->abs.body, depth + 1,
+					   nrefs, vars);
 		break;
 	case TERM_APP:
 		term->app.fun =
-			term_bind(term->app.fun, depth, nformals, formals);
+			term_bind(term->app.fun, depth, nrefs, vars);
 		for (size_t i = term->app.nargs; i--; /* nada */)
 			term->app.args[i] =
 				term_bind(term->app.args[i], depth,
-					  nformals, formals);
-		break;
-	case TERM_BOUND_VAR:
-		assert(term->bv.up >= 0);
-		assert(term->bv.up < depth);
+					  nrefs, vars);
 		break;
 	case TERM_CELL:
 		for (size_t i = term->cell.nelts; i--; /* nada */)
 			term->cell.elts[i] =
 				term_bind(term->cell.elts[i], depth,
-					  nformals, formals);
+					  nrefs, vars);
 		break;
-	case TERM_FREE_VAR:
-		for (size_t i = nformals; i--; /* nada */)
-			if (formals[i] == term->fv.name)
-				return TermBoundVar(depth, i, term->fv.name);
+	case TERM_CONSTANT:
+		for (size_t i = nrefs; i--; /* nada */)
+			if (vars[i] == term->constant.binder->name)
+				return TermVar(depth, i, vars[i]);
 		break;
 	case TERM_LET:
 		term->let.body = term_bind(term->let.body, depth + 1,
-					   nformals, formals);
+					   nrefs, vars);
 		for (size_t i = term->let.ndefs; i--; /* nada */)
 			term->let.vals[i] =
 				term_bind(term->let.vals[i], depth,
-					  nformals, formals);
+					  nrefs, vars);
 		break;
 	case TERM_NUM:
 	case TERM_PRIM:
 	case TERM_STRING:
+	case TERM_SYMBOL:
 		break;
 	case TERM_TEST:
 		term->test.pred = term_bind(term->test.pred, depth,
-					    nformals, formals);
+					    nrefs, vars);
 		for (size_t i = term->test.ncsqs; i--; /* nada */)
 			term->test.csqs[i] =
 				term_bind(term->test.csqs[i], depth,
-					  nformals, formals);
+					  nrefs, vars);
 		for (size_t i = term->test.nalts; i--; /* nada */)
 			term->test.alts[i] =
 				term_bind(term->test.alts[i], depth,
-					  nformals, formals);
+					  nrefs, vars);
+		break;
+	case TERM_VAR:
+		assert(term->var.up >= 0);
+		assert(term->var.up < depth);
 		break;
 	default:
 		panicf("Unhandled term variety %d\n", term->variety);
@@ -108,69 +107,60 @@ static struct term *term_bind(struct term *term, int depth,
 }
 
 /*
- * Lift terms to resolve references to the global environment.  They
- * don't become closed (this calculator handles open terms fine) but we
- * do substitute global definitions by constructing a beta-redex around
- * the given term.  Note that each global has been previously lifted
- * (we do so before installing in the global environment) so we don't
- * have to worry about references among the arguments.
+ * Lift certain terms to resolve references to the global environment.
+ * We do this by wrapping the given term in a let-expression by which
+ * we provide the terms it references.  Global environment constants
+ * contained in 'refs' are self-contained; we don't have to worry
+ * about inter-references among 'refs'.
  */
-static struct term *lift(struct term *term, struct wordbuf *defs)
+static struct term *lift(struct term *term, const struct wordtab *refs)
 {
 	/*
-	 * Sort the definitions by environment index so definition
-	 * precedes reference; this is not strictly necessary since
-	 * each global term is closed, but lifting according to
-	 * global definition order is predictable, and more
-	 * importantly it allows us to deduplicate free variables.
+	 * Sort references by environment index so definition precedes
+	 * reference; this is not strictly necessary since each global
+	 * constant is closed, but lifting according to definition
+	 * order is consistent unlike hash-table order.
 	 */
-	size_t ndefs = wordbuf_used(defs);
-	qsort(defs->data, ndefs, sizeof defs->data[0], env_entry_cmp);
+	struct wordbuf wb;
+	wordbuf_init(&wb);
+
+	struct wordtab_iter iter;
+	wordtab_iter_init(refs, &iter);
+	struct wordtab_entry *entry;
+	while ((entry = wordtab_iter_next(&iter)))
+		wordbuf_push(&wb, (word) entry->data);
+
+	size_t nrefs = wordbuf_used(&wb);
+	qsort(wb.data, nrefs, sizeof wb.data[0], binder_ptr_cmp);
 
 	/*
-	 * Now that the referenced definitions are sorted, we can
-	 * remove and free duplicate entries.
+	 * Extract the names and values of global constants into formal
+	 * parameter & argument lists.  The unused 0th entry of 'vars'
+	 * and 'vals' is the self-reference slot.
 	 */
-	symbol_mt last = the_empty_symbol;
-	for (size_t i = 0, j = 0; i < wordbuf_used(defs); ++i) {
-		struct env_entry *ee = (void*) wordbuf_at(defs, i);
-		if (ee->name == last) {
-			free(ee);
-			ndefs--;
-		} else {
-			defs->data[j++] = defs->data[i];
-			last = ee->name;
-		}
+	symbol_mt *vars = xmalloc(sizeof *vars * nrefs + 1);
+	struct term **vals = xmalloc(sizeof *vals * nrefs + 1);
+	for (size_t i = nrefs; i--; /* nada */) {
+		const struct binder *binder = (void*) wordbuf_at(&wb, i);
+		assert(binder->term);
+		assert(!binder->val);
+		assert(binder->flags & BINDING_LIFTING);
+		vars[i+1] = binder->name;
+		vals[i+1] = binder->term;
 	}
-	wordbuf_popn(defs, wordbuf_used(defs) - ndefs);
+	vars[0] = the_empty_symbol;
+	vals[0] = TermPrim(&prim_undefined);
 
 	/*
-	 * Extract the names and values of definitions from the global
-	 * environment into formal parameter & argument lists.
-	 * XXX comment the +1 for formals (self-ref)
+	 * Create an let expression wrapping the given term, with one
+	 * definition for each substitution from the global environment.
+	 * Note that we don't need to free 'vars' or 'vals' since term
+	 * construction transfers ownership to the callee.
 	 */
-	symbol_mt *formals = xmalloc(sizeof *formals * ndefs + 1);
-	struct term **args = xmalloc(sizeof *args * ndefs);
-	for (size_t i = ndefs; i--; /* nada */) {
-		const struct env_entry *ee = (void*) wordbuf_at(defs, i);
-		assert(ee->var->variety == TERM_FREE_VAR);
-		assert(ee->val);
-		formals[i+1] = ee->var->fv.name;
-		args[i] = ee->val;
-	}
-	formals[0] = the_empty_symbol;
-
-	/*
-	 * Create an abstraction wrapping the given term, with one formal
-	 * parameter for each substitution from the global environment.
-	 * Then wrap *that* in an application of the args to make a redex.
-	 *
-	 * Note that we don't need to free 'formals', 'args', or 'bodies'
-	 * since term construction transfers ownership to the callee.
-	 */
-	struct term **bodies = xmalloc(sizeof *bodies);
-	bodies[0] = term_bind(term, 0, ndefs+1, formals);
-	return TermApp(TermAbs(ndefs+1, formals, 1, bodies), ndefs, args);
+	term = TermLet(nrefs+1, vars, vals, term_bind(term, 0, nrefs+1, vars));
+	assert(term);
+	wordbuf_fini(&wb);
+	return term;
 }
 
 struct context {
@@ -196,8 +186,8 @@ static struct binding context_lookup(const struct context *context,
 }
 
 static struct term *form_convert(const struct form *form,
-				 struct wordbuf *defs,
-				 struct context *context);
+				 struct context *context,
+				 struct wordtab *refs);
 
 /*
  * Abstractions and fixpoint abstractions have the same structure
@@ -205,8 +195,8 @@ static struct term *form_convert(const struct form *form,
  * becomes the 0th parameter of the construction abstraction term.
  */
 static struct term *form_convert_abs(const struct form *form,
-				     struct wordbuf *defs,
-				     struct context *context)
+				     struct context *context,
+				     struct wordtab *refs)
 {
 	assert((form->variety == FORM_ABS && !form->abs.self) ||
 	       (form->variety == FORM_FIX &&  form->abs.self));
@@ -230,24 +220,16 @@ static struct term *form_convert_abs(const struct form *form,
 		.binders = formals,	/* freed when term is freed */
 	};
 
-	size_t nbodies = form_length(form->abs.bodies);
-	assert(nbodies > 0);
-	struct term **bodies = xmalloc(sizeof *bodies * nbodies),
-		    **bdst = bodies + nbodies;
-	const struct form *body;
-	for (body = form->abs.bodies; body; body = body->prev)
-		*--bdst = form_convert(body, defs, &link);
-	assert(bdst == bodies);
-
-	/* transfer ownership of 'formals' and 'bodies' */
+	/* transfer ownership of 'formals' */
+	struct term *body = form_convert(form->abs.body, &link, refs);
 	return form->abs.self ?
-		TermFix(nformals, formals, nbodies, bodies) :
-		TermAbs(nformals, formals, nbodies, bodies);
+		TermFix(nformals, formals, body) :
+		TermAbs(nformals, formals, body);
 }
 
 static struct term *form_convert_let(const struct form *form,
-				     struct wordbuf *defs,
-				     struct context *context)
+				     struct context *context,
+				     struct wordtab *refs)
 {
 	assert(form->variety == FORM_LET);
 
@@ -259,7 +241,7 @@ static struct term *form_convert_let(const struct form *form,
 	for (i = ndefs, def = form->let.defs; i-- > 1; def = def->prev) {
 		assert(def->def.var->variety == FORM_VAR);
 		vars[i] = def->def.var->var.name;
-		vals[i] = form_convert(def->def.val, defs, context);
+		vals[i] = form_convert(def->def.val, context, refs);
 	}
 	assert(!i);
 	vars[i] = the_empty_symbol;
@@ -274,38 +256,34 @@ static struct term *form_convert_let(const struct form *form,
 
 	/* transfer ownership of 'vars' and 'vals' */
 	return TermLet(ndefs, vars, vals,
-		       form_convert(form->let.body, defs, &link));
+		       form_convert(form->let.body, &link, refs));
 }
 
 /*
- * form_convert, as its name suggests, converts forms to terms.  It
- * determines which variables are free vs. bound, extending the global
- * environment as necessary.  It doesn't perform any substitutions of
- * global definitions, however; it simply gathers the environment
- * entries of global definitions referenced by 'form' in 'defs'.
+ * form_convert, as its name suggests, converts forms to terms.
  */
 static struct term *form_convert(const struct form *form,
-				 struct wordbuf *defs,
-				 struct context *context)
+				 struct context *context,
+				 struct wordtab *refs)
 {
 	switch (form->variety) {
 	case FORM_ABS: case FORM_FIX:
-		return form_convert_abs(form, defs, context);
+		return form_convert_abs(form, context, refs);
 	case FORM_APP: {
 		size_t nargs = form_length(form->app.args);
 		/*
 		 * 0-ary applications also collapse.
 		 */
 		if (nargs == 0)
-			return form_convert(form->app.fun, defs, context);
+			return form_convert(form->app.fun, context, refs);
 
 		struct term **args = xmalloc(sizeof *args * nargs),
 			    **dst = args + nargs;
 		const struct form *arg;
 		for (arg = form->app.args; arg; arg = arg->prev)
-			*--dst = form_convert(arg, defs, context);
+			*--dst = form_convert(arg, context, refs);
 		assert(dst == args);
-		return TermApp(form_convert(form->app.fun, defs, context),
+		return TermApp(form_convert(form->app.fun, context, refs),
 			       nargs, args);
 	}
 	case FORM_CELL: {
@@ -314,19 +292,19 @@ static struct term *form_convert(const struct form *form,
 			    **dst = elts + nelts;
 		for (const struct form *elt = form->cell.elts;
 		     elt; elt = elt->prev)
-			*--dst = form_convert(elt, defs, context);
+			*--dst = form_convert(elt, context, refs);
 		assert(dst == elts);
 		return TermCell(nelts, elts);
 	}
 	case FORM_LET:
-		return form_convert_let(form, defs, context);
+		return form_convert_let(form, context, refs);
 	case FORM_NUM:
 		return TermNum(form->num);
 	case FORM_OP1: {
 		const size_t nargs = 1;
 		struct term **args = xmalloc(sizeof *args * nargs),
 			    **dst = args + nargs;
-		*--dst = form_convert(form->op1.arg, defs, context);
+		*--dst = form_convert(form->op1.arg, context, refs);
 		assert(dst == args);
 		return TermApp(TermPrim(form->op1.prim), nargs, args);
 	}
@@ -334,15 +312,28 @@ static struct term *form_convert(const struct form *form,
 		const size_t nargs = 2;
 		struct term **args = xmalloc(sizeof *args * nargs),
 			    **dst = args + nargs;
-		*--dst = form_convert(form->op2.rhs, defs, context);
-		*--dst = form_convert(form->op2.lhs, defs, context);
+		*--dst = form_convert(form->op2.rhs, context, refs);
+		*--dst = form_convert(form->op2.lhs, context, refs);
 		assert(dst == args);
 		return TermApp(TermPrim(form->op2.prim), nargs, args);
 	}
 	case FORM_PRIM:
+		/*
+		 * Special case $undefined, which can be represented
+		 * syntactically (using primitive syntax) but not
+		 * semantically (so there is no corresponding term).
+		 */
+		if (form->prim == &prim_undefined) {
+			errf("Syntactic primitive %s has no semantic "
+			     "representation\n", form->prim->name);
+			wordtab_set(refs, the_undefined_symbol);
+			return NULL;
+		}
 		return TermPrim(form->prim);
 	case FORM_STRING:
 		return TermString(xstrdup(form->str));
+	case FORM_SYMBOL:
+		return TermSymbol(form->id);
 	case FORM_TEST: {
 		size_t ncsq = form_length(form->test.csq),
 		       nalt = form_length(form->test.alt);
@@ -352,28 +343,34 @@ static struct term *form_convert(const struct form *form,
 			    **cdst = csq + ncsq, **adst = alt + nalt;
 		const struct form *p;
 		for (p = form->test.csq; p; p = p->prev)
-			*--cdst = form_convert(p, defs, context);
+			*--cdst = form_convert(p, context, refs);
 		for (p = form->test.alt; p; p = p->prev)
-			*--adst = form_convert(p, defs, context);
+			*--adst = form_convert(p, context, refs);
 		assert(cdst == csq && adst == alt);
-		return TermTest(form_convert(form->test.pred, defs, context),
+		return TermTest(form_convert(form->test.pred, context, refs),
 				ncsq, csq /* transfer ownership */,
 				nalt, alt /* transfer ownership */);
 	}
 	case FORM_VAR: {
 		struct binding b = context_lookup(context, form->var.name);
 		if (b.up >= 0)
-			return TermBoundVar(b.up, b.across, form->var.name);
+			return TermVar(b.up, b.across, form->var.name);
 
-		struct env_entry ee = env_declare(form->var.name);
-		assert(ee.var);
-		assert(ee.var->variety == TERM_FREE_VAR);
-		if (ee.val) {
-			struct env_entry *pe = xmalloc(sizeof *pe);
-			*pe = ee;
-			wordbuf_push(defs, (word) pe);
-		}
-		return ee.var;
+		/*
+		 * If it's not a bound local variable, it must be a global
+		 * variable.  Find it in the global environment and return
+		 * its binder as a constant, or return NULL if it's not
+		 * found.  If the binder is flagged LIFTING, track this
+		 * reference in 'refs'.
+		 */
+		assert(the_current_sourcefile);
+		struct binder *binder = env_lookup(form->var.name,
+				&the_current_sourcefile->namespaces);
+		if (!binder)
+			wordtab_set(refs, the_undefined_symbol);
+		else if (binder->flags & BINDING_LIFTING)
+			wordtab_put(refs, binder->name, binder);
+		return binder ? TermConstant(binder) : NULL;
 	}
 	default:
 		panicf("Unhandled form variety %d\n", form->variety);
@@ -382,14 +379,24 @@ static struct term *form_convert(const struct form *form,
 
 struct term *resolve(const struct form *form)
 {
-	struct wordbuf defs;
-	wordbuf_init(&defs);
+	/*
+	 * Track global constant references which require lifting.
+	 * We insert the undefined symbol during conversion to
+	 * indicate failure due to dangling global reference.
+	 */
+	struct wordtab refs;
+	wordtab_init(&refs, 10 /* size hint */);
 
-	struct term *term = form_convert(form, &defs, NULL);
-	if (!term) goto done;	/* error message already printed */
-	if (wordbuf_used(&defs) > 0) term = lift(term, &defs);
+	struct term *term = form_convert(form, NULL, &refs);
+	if (wordtab_test(&refs, the_undefined_symbol)) {
+		err("Open form cannot be resolved to a term\n");
+		term = NULL;
+		goto done;
+	}
+	if (!wordtab_is_empty(&refs))
+		term = lift(term, &refs);
+	assert(term);
 done:
-	wordbuf_free_clear(&defs);
-	wordbuf_fini(&defs);
+	wordtab_fini(&refs);
 	return term;
 }

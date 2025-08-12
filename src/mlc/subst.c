@@ -209,10 +209,11 @@ static struct node *copy_slots(struct node *copy, const struct node *src,
 						 src->slots[i].bv.across,
 						 var, subst);
 			break;
-		case SLOT_FREE:
+		case SLOT_CONSTANT:
 		case SLOT_NUM:
 		case SLOT_PARAM:
 		case SLOT_PRIM:
+		case SLOT_SYMBOL:
 			copy->slots[i] = src->slots[i];
 			break;
 		case SLOT_STRING:

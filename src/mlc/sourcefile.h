@@ -1,7 +1,7 @@
-#ifndef LARK_MLC_HEAP_H
-#define LARK_MLC_HEAP_H
+#ifndef LARK_MLC_SOURCEFILE_H
+#define LARK_MLC_SOURCEFILE_H
 /*
- * Copyright (c) 2009-2024 Michael P. Touloumtzis.
+ * Copyright (c) 2009-2025 Michael P. Touloumtzis.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -22,19 +22,31 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
-#include <stddef.h>
+#include <stdbool.h>
 
-extern float the_heap_pressure, the_heap_threshold;
+#include <util/circlist.h>
+#include <util/symtab.h>
+#include <util/wordbuf.h>
+#include <util/wordtab.h>
 
-struct node;
+struct stmt;
 
-void node_heap_init(void);
-struct node *node_heap_alloc(size_t nslots);
-void node_heap_free(struct node *node);
+struct sourcefile {
+	struct circlist entry;		/* for run/blocked queuing */
+	struct wordbuf contents;	/* statements in sourcefile */
+	struct wordtab namespaces;	/* active namespaces */
+	symbol_mt namespace,		/* current namespace */
+		  section,		/* same as namespace if named */
+		  requirement;		/* requirement we're blocked on */
+	const char *filename;		/* source file name */
+	size_t pos, bound;		/* next line to resolve vs bound */
+	int line;			/* file line number for requirement */
+	bool public;			/* public namespace? */
+};
 
-void node_heap_baseline(void);		/* hard reset after heap -> global */
-void node_heap_calibrate(void);		/* set threshold after gc */
-void print_heap_stats(void);
-void reset_heap_stats(void);		/* soft reset of allocs/frees */
+extern void sourcefile_init(struct sourcefile *sf, const char *filename);
+extern void sourcefile_fini(struct sourcefile *sf);
+extern void sourcefile_add(struct sourcefile *sf, struct stmt *stmt);
+extern int sourcefile_begin(struct sourcefile *sf, symbol_mt section);
 
-#endif /* LARK_MLC_HEAP_H */
+#endif /* LARK_MLC_SOURCEFILE_H */

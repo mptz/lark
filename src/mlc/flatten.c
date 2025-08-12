@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009-2024 Michael P. Touloumtzis.
+ * Copyright (c) 2009-2025 Michael P. Touloumtzis.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -21,101 +21,163 @@
  */
 
 #include <assert.h>
-#include <stddef.h>
 
 #include <util/message.h>
 
+#include "binder.h"
 #include "flatten.h"
 #include "node.h"
 #include "term.h"
 
 /*
- * In the SCAM machine definition, the variable '*' (a five-pointed
- * star in the original) is a special variable marking the start of a
- * linear environment of explicit substitution nodes.  In this code
- * base it corresponds to node->prev == NULL.
+ * The global environment contains sentinel nodes; the actual node to
+ * which we link via substitution is referenced by a substitution in
+ * the sentinel's 0th slot.  This removal of the indirection through
+ * the global constant resembles a rename-during-reduction.
  */
-#define STAR NULL
+static struct node *constant_of(const struct term *term)
+{
+	struct node *n = term->constant.binder->val;
+	assert(n->variety == NODE_SENTINEL);
+	assert(n->nref == 0);
+	assert(n->backref == NULL);
+	n = n->slots[0].subst;
+
+	/*
+	 * Note that n's predecessor, n->prev, may not be the same term
+	 * as the binder's value, if for example one global variable
+	 * is simply an alias for another.  Nevertheless n->prev should
+	 * be *a* sentinel since we should never see an global binder
+	 * referencing an interior portion of an environment node.
+	 */
+	assert(n->prev->variety == NODE_SENTINEL);
+	assert(n->prev->backref == NULL);
+
+	/*
+	 * The value of a global constant must be:
+	 *  - a regular/real node (not a sentinel)
+	 *  - at depth 0 (there are no surrounding abstractions)
+	 *  - referenced (at least by its sentinel, possibly by more)
+	 */
+	assert(n->variety != NODE_SENTINEL);
+	assert(n->depth == 0);
+	assert(n->nref > 0);
+	return n;
+}
 
 static struct node_chain
-flatten_term(struct term *term, struct node *prev, unsigned depth);
+flatten_term(const struct term *term, struct node *prev, unsigned depth);
 
 /*
  * When flattening, we assemble a node chain, linking each node to its
- * predecessor.  After the chain is complete, we fix up successors.
+ * predecessor.  After the chain is complete, we fix up successors and
+ * bundle the doubly-linked list endpoints into a sentinel node.
  */
-struct node *flatten_chain(struct term *term, unsigned depth)
+struct node *flatten_chain(const struct term *term, unsigned depth)
 {
-	struct node_chain chain = flatten_term(term, STAR, depth);
+	struct node_chain chain = flatten_term(term, NULL, depth);
 	assert(chain.next->depth == depth);
 	assert(chain.prev->depth == depth);
-	for (struct node *curr = chain.prev, *next = STAR;
-	     curr != STAR; next = curr, curr = curr->prev)
+	for (struct node *curr = chain.prev, *next = NULL;
+	     curr != NULL; next = curr, curr = curr->prev)
 		curr->next = next;
 	return NodeSentinel(chain.next, chain.prev, depth);
 }
 
 /*
  * flatten_hoist is called multiple times when we're flattening a
- * term with nested subterms (e.g. an application, pair, or test).
+ * term with nested subterms (e.g. an application, cell, or test).
  * The intent is suggested by the name: we lift *children* to *peers*
  * (which you could admittedly view as another kind of nesting, but
  * which are also linearized into the environment alongside the parent
  * term so we can visit every term at a given abstraction depth with
- * left/right traversals).  Once that is done we only need to "go
+ * right/left traversals).  Once that is done we only need to "go
  * deeper" to enter into abstractions, tests, and other nodes with
  * unevaluated subexpressions.
  *
- * We eliminate nesting by returning a variable (bound, free, or
- * subst); in the substitution case we flatten the nested subterm and
- * attach it to the linear environment we're constructing (link it to
- * 'prev').  We return the slot to write into the parent node along
- * with the current head of the environment, 'prev'.
+ * We eliminate nesting by returning a reference (to a bound variable,
+ * constant, or explicit substitution); in the substitution case we
+ * flatten the nested subterm and attach it to the linear environment
+ * we're constructing (link it to 'prev').  We return the slot to write
+ * into the parent node along with the current head of the environment,
+ * 'prev'.
  */
 static struct slot_and_prev {
 	struct slot slot;
 	struct node *prev;
-} flatten_hoist(struct term *term, struct node *prev, unsigned depth)
+} flatten_hoist(const struct term *term, struct node *prev, unsigned depth)
 {
 	switch (term->variety) {
-	case TERM_BOUND_VAR:
+	case TERM_CONSTANT:
+		/*
+		 * Reference to the global environment.  If opaque,
+		 * we create a constant slot; otherwise we create an
+		 * explicit subtitution, mimicing the way such a term
+		 * would be referenced post-evaluation.  We don't set
+		 * up backreferences (we can't mutate the global
+		 * environment and don't include it in R-to-L eval)
+		 * but we do bump its reference count to keep reference
+		 * counting uniform.
+		 */
+		if (term->constant.binder->flags & BINDING_OPAQUE)
+			return (struct slot_and_prev) {
+				.slot.variety = SLOT_CONSTANT,
+				.slot.index = term->constant.binder->index,
+				.prev = prev,
+			};
+		for (struct node *k = constant_of(term); k->nref++; /* nada */)
+			return (struct slot_and_prev) {
+				.slot.variety = SLOT_SUBST,
+				.slot.subst = k,
+				.prev = prev,
+			};
+	case TERM_VAR:
 		/*
 		 * Since we only flatten top-level terms, bound variable
 		 * indexes are bounded by the current abstraction depth.
 		 * Outside any abstractions (depth == 0) we shouldn't
 		 * encounter a bound variable at all.
 		 */
-		assert(term->bv.up < depth);
+		assert(term->var.up < depth);
 		return (struct slot_and_prev) {
 			.slot.variety = SLOT_BOUND,
-			.slot.bv.up = term->bv.up,
-			.slot.bv.across = term->bv.across,
+			.slot.bv.up = term->var.up,
+			.slot.bv.across = term->var.across,
 			.prev = prev,
 		};
-	case TERM_FREE_VAR:
-		return (struct slot_and_prev) {
-			.slot.variety = SLOT_FREE,
-			.slot.term = term,
-			.prev = prev,
-		};
-	default: {
-		/*
-		 * Since flattened applications only contain indirections
-		 * via variables and substitutions, any non-variable will
-		 * be a separately-flattened substitution.
-		 */
-		struct node_chain chain = flatten_term(term, prev, depth);
-		return (struct slot_and_prev) {
-			.slot.variety = SLOT_SUBST,
-			.slot.subst = chain.next,
-			.prev = chain.prev,
-		};
+	default: /* fall through... */;
 	}
-	}
+
+	/*
+	 * Since flattened nodes only contain indirections via variables
+	 * (handled above) and substitutions, any non-variable yields a
+	 * separately-flattened substitution.  We confirm that the chain
+	 * has extended 'prev' and that the new chain is unreferenced;
+	 * callers will look for this to determine whether to establish
+	 * a backreference.
+	 */
+	struct node_chain chain = flatten_term(term, prev, depth);
+	assert(chain.next->nref == 0);
+	assert(chain.prev != prev);
+	return (struct slot_and_prev) {
+		.slot.variety = SLOT_SUBST,
+		.slot.subst = chain.next,
+		.prev = chain.prev,
+	};
+}
+
+/*
+ * This is the aforementioned check to determine whether a backreference
+ * from a freshly allocated node chain is necessary.
+ */
+static inline bool
+is_fresh_subst(const struct slot slot)
+{
+	return slot.variety == SLOT_SUBST && slot.subst->nref == 0;
 }
 
 static struct node_chain
-flatten_term(struct term *term, struct node *prev, unsigned depth)
+flatten_term(const struct term *term, struct node *prev, unsigned depth)
 {
 	struct node_chain retval;
 
@@ -123,10 +185,9 @@ flatten_term(struct term *term, struct node *prev, unsigned depth)
 	case TERM_ABS:
 	case TERM_FIX:
 		assert(term->abs.nformals > 0);
-		assert(term->abs.nbodies == 1);
 		retval.next = retval.prev =
 			NodeAbs(prev, depth,
-				flatten_chain(term->abs.bodies[0], depth + 1),
+				flatten_chain(term->abs.body, depth + 1),
 				term->abs.nformals, term->abs.formals);
 		break;
 	case TERM_APP: {
@@ -161,10 +222,7 @@ flatten_term(struct term *term, struct node *prev, unsigned depth)
 			sap = flatten_hoist(
 				i == 0 ? term->app.fun : term->app.args[i-1],
 				sap.prev, depth);
-			assert(slot_is_ref(sap.slot));
-			if (sap.slot.variety == SLOT_SUBST) {
-				assert(sap.slot.subst != prev);
-				assert(sap.slot.subst->nref == 0);
+			if (is_fresh_subst(sap.slot)) {
 				sap.slot.subst->nref = 1;
 				sap.slot.subst->backref = &prev->slots[i];
 			}
@@ -173,16 +231,6 @@ flatten_term(struct term *term, struct node *prev, unsigned depth)
 		retval.prev = sap.prev;
 		break;
 	}
-	case TERM_BOUND_VAR:
-		/*
-		 * As above, bound variable indexes should be strictly
-		 * less than the number of abstractions traversed so far.
-		 */
-		assert(term->bv.up < depth);
-		retval.next = retval.prev =
-			NodeBoundVar(prev, depth, term->bv.up,
-				     term->bv.across);
-		break;
 	case TERM_CELL: {
 		/*
 		 * XXX this is nearly identical to TERM_APP, should look
@@ -195,10 +243,7 @@ flatten_term(struct term *term, struct node *prev, unsigned depth)
 		for (size_t i = 0; i < term->cell.nelts; ++i) {
 			sap = flatten_hoist(
 				term->cell.elts[i], sap.prev, depth);
-			assert(slot_is_ref(sap.slot));
-			if (sap.slot.variety == SLOT_SUBST) {
-				assert(sap.slot.subst != prev);
-				assert(sap.slot.subst->nref == 0);
+			if (is_fresh_subst(sap.slot)) {
 				sap.slot.subst->nref = 1;
 				sap.slot.subst->backref = &prev->slots[i];
 			}
@@ -207,8 +252,14 @@ flatten_term(struct term *term, struct node *prev, unsigned depth)
 		retval.prev = sap.prev;
 		break;
 	}
-	case TERM_FREE_VAR:
-		retval.next = retval.prev = NodeFreeVar(prev, depth, term);
+	case TERM_CONSTANT:
+		/*
+		 * n.b. NodeSubst bumps substitutions's reference count.
+		 */
+		retval.next = retval.prev =
+			term->constant.binder->flags & BINDING_OPAQUE ?
+			NodeConstant(prev, depth, term->constant.binder->index):
+			NodeSubst(prev, depth, constant_of(term));
 		break;
 	case TERM_LET: {
 		/*
@@ -224,10 +275,7 @@ flatten_term(struct term *term, struct node *prev, unsigned depth)
 		for (size_t i = 1; i < term->let.ndefs; ++i) {
 			sap = flatten_hoist(
 				term->let.vals[i], sap.prev, depth);
-			assert(slot_is_ref(sap.slot));
-			if (sap.slot.variety == SLOT_SUBST) {
-				assert(sap.slot.subst != prev);
-				assert(sap.slot.subst->nref == 0);
+			if (is_fresh_subst(sap.slot)) {
 				sap.slot.subst->nref = 1;
 				sap.slot.subst->backref = &prev->slots[i];
 			}
@@ -245,6 +293,9 @@ flatten_term(struct term *term, struct node *prev, unsigned depth)
 	case TERM_STRING:
 		retval.next = retval.prev = NodeString(prev, depth, term->str);
 		break;
+	case TERM_SYMBOL:
+		retval.next = retval.prev = NodeSymbol(prev, depth, term->sym);
+		break;
 	case TERM_TEST: {
 		/*
 		 * When we're done flattening the test and hooking up
@@ -260,10 +311,7 @@ flatten_term(struct term *term, struct node *prev, unsigned depth)
 
 		struct slot_and_prev sap =
 			flatten_hoist(term->test.pred, prev, depth);
-		assert(slot_is_ref(sap.slot));
-		if (sap.slot.variety == SLOT_SUBST) {
-			assert(sap.slot.subst != prev);
-			assert(sap.slot.subst->nref == 0);
+		if (is_fresh_subst(sap.slot)) {
 			sap.slot.subst->nref = 1;
 			sap.slot.subst->backref = &retval.next->slots[0];
 		}
@@ -287,13 +335,23 @@ flatten_term(struct term *term, struct node *prev, unsigned depth)
 			flatten_chain(term->test.alts[0], depth);
 		break;
 	}
+	case TERM_VAR:
+		/*
+		 * As above, bound variable indexes should be strictly
+		 * less than the number of abstractions traversed so far.
+		 */
+		assert(term->var.up < depth);
+		retval.next = retval.prev =
+			NodeBoundVar(prev, depth, term->var.up,
+				     term->var.across);
+		break;
 	default:
 		panicf("Unhandled term variety %d\n", term->variety);
 	}
 	return retval;
 }
 
-struct node *flatten(struct term *term)
+struct node *flatten(const struct term *term)
 {
 	return flatten_chain(term, 0);
 }

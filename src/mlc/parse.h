@@ -1,7 +1,7 @@
 #ifndef LARK_MLC_PARSE_H
 #define LARK_MLC_PARSE_H
 /*
- * Copyright (c) 2009-2022 Michael P. Touloumtzis.
+ * Copyright (c) 2009-2025 Michael P. Touloumtzis.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -21,9 +21,5 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  */
-
-extern int parse_file(const char *pathname);
-extern int parse_include(const char *pathname);
-extern int parse_stdin(void);
 
 #endif /* LARK_MLC_PARSE_H */

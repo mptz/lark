@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009-2024 Michael P. Touloumtzis.
+ * Copyright (c) 2009-2025 Michael P. Touloumtzis.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -26,7 +26,8 @@
 #include <util/memutil.h>
 #include <util/message.h>
 
-#include "memloc.h"
+#include "binder.h"
+#include "env.h"
 #include "num.h"
 #include "prim.h"
 #include "term.h"
@@ -40,15 +41,13 @@ term_alloc(enum term_variety variety)
 }
 
 struct term *
-TermAbs(size_t nformals, symbol_mt *formals,
-	size_t nbodies, struct term **bodies)
+TermAbs(size_t nformals, symbol_mt *formals, struct term *body)
 {
 	struct term *term = term_alloc(TERM_ABS);
 	assert(nformals > 0);
 	term->abs.nformals = nformals;
 	term->abs.formals = formals;	/* take ownership */
-	term->abs.nbodies = nbodies;
-	term->abs.bodies = bodies;	/* take ownership */
+	term->abs.body = body;
 	return term;
 }
 
@@ -63,16 +62,6 @@ TermApp(struct term *fun, size_t nargs, struct term **args)
 }
 
 struct term *
-TermBoundVar(int up, int across, symbol_mt name)
-{
-	struct term *term = term_alloc(TERM_BOUND_VAR);
-	term->bv.up = up;
-	term->bv.across = across;
-	term->bv.name = name;
-	return term;
-}
-
-struct term *
 TermCell(size_t nelts, struct term **elts)
 {
 	struct term *term = term_alloc(TERM_CELL);
@@ -82,23 +71,21 @@ TermCell(size_t nelts, struct term **elts)
 }
 
 struct term *
-TermFreeVar(symbol_mt name)
+TermConstant(const struct binder *binder)
 {
-	struct term *term = term_alloc(TERM_FREE_VAR);
-	term->fv.name = name;
+	struct term *term = term_alloc(TERM_CONSTANT);
+	term->constant.binder = binder;
 	return term;
 }
 
 struct term *
-TermFix(size_t nformals, symbol_mt *formals,
-	size_t nbodies, struct term **bodies)
+TermFix(size_t nformals, symbol_mt *formals, struct term *body)
 {
 	struct term *term = term_alloc(TERM_FIX);
 	assert(nformals > 0);
 	term->abs.nformals = nformals;
 	term->abs.formals = formals;	/* take ownership */
-	term->abs.nbodies = nbodies;
-	term->abs.bodies = bodies;	/* take ownership */
+	term->abs.body = body;
 	return term;
 }
 
@@ -148,6 +135,14 @@ TermString(const char *str)
 }
 
 struct term *
+TermSymbol(symbol_mt sym)
+{
+	struct term *term = term_alloc(TERM_SYMBOL);
+	term->sym = sym;
+	return term;
+}
+
+struct term *
 TermTest(struct term *pred,
 	 size_t ncsqs, struct term **csqs,
 	 size_t nalts, struct term **alts)
@@ -161,6 +156,16 @@ TermTest(struct term *pred,
 	return term;
 }
 
+struct term *
+TermVar(int up, int across, symbol_mt name)
+{
+	struct term *term = term_alloc(TERM_VAR);
+	term->var.up = up;
+	term->var.across = across;
+	term->var.name = name;
+	return term;
+}
+
 void term_print(const struct term *term)
 {
 	switch (term->variety) {
@@ -170,11 +175,8 @@ void term_print(const struct term *term)
 		for (size_t i = 1; i < term->abs.nformals; ++i)
 			printf("%s%s", i > 1 ? ", " : "",
 			       symtab_lookup(term->abs.formals[i]));
-		putchar('.');
-		for (size_t i = 0; i < term->abs.nbodies; ++i) {
-			fputs(i ? ", " : " ", stdout);
-			term_print(term->abs.bodies[i]);
-		}
+		fputs(". ", stdout);
+		term_print(term->abs.body);
 		putchar(']');
 		break;
 	case TERM_APP:
@@ -187,10 +189,6 @@ void term_print(const struct term *term)
 		}
 		putchar(')');
 		break;
-	case TERM_BOUND_VAR:
-		printf("%s<%d.%d>", symtab_lookup(term->bv.name),
-		       term->bv.up, term->bv.across);
-		break;
 	case TERM_CELL:
 		putchar('[');
 		for (size_t i = 0; i < term->cell.nelts; ++i) {
@@ -199,23 +197,18 @@ void term_print(const struct term *term)
 		}
 		putchar(']');
 		break;
-	case TERM_FREE_VAR:
-		/*
-		 * XXX why print memloc() for a free variable?  Aren't
-		 * all free instances of e.g. 'x' the same?
-		 */
-		printf("%s@%s", symtab_lookup(term->fv.name), memloc(term));
+	case TERM_CONSTANT:
+		printf("%s<%zu>",
+		       symtab_lookup(term->constant.binder->name),
+		       term->constant.binder->index);
 		break;
 	case TERM_FIX:
 		printf("[%s! ", symtab_lookup(term->abs.formals[0]));
 		for (size_t i = 1; i < term->abs.nformals; ++i)
 			printf("%s%s", i > 1 ? ", " : "",
 			       symtab_lookup(term->abs.formals[i]));
-		putchar('.');
-		for (size_t i = 0; i < term->abs.nbodies; ++i) {
-			fputs(i ? ", " : " ", stdout);
-			term_print(term->abs.bodies[i]);
-		}
+		fputs(". ", stdout);
+		term_print(term->abs.body);
 		putchar(']');
 		break;
 	case TERM_LET:
@@ -235,10 +228,13 @@ void term_print(const struct term *term)
 		printf("'%s'", term->prim->name);
 		break;
 	case TERM_PRUNED:
-		fputs("<PRUNED>", stdout);
+		fputs("$pruned", stdout);
 		break;
 	case TERM_STRING:
 		printf("\"%s\"", term->str);
+		break;
+	case TERM_SYMBOL:
+		printf("#%s", symtab_lookup(term->sym));
 		break;
 	case TERM_TEST:
 		putchar('[');
@@ -252,6 +248,10 @@ void term_print(const struct term *term)
 			term_print(term->test.alts[i]);
 		}
 		putchar(']');
+		break;
+	case TERM_VAR:
+		printf("%s<%d.%d>", symtab_lookup(term->var.name),
+		       term->var.up, term->var.across);
 		break;
 	default:
 		panicf("Unhandled term variety %d\n", term->variety);

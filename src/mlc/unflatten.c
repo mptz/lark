@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009-2024 Michael P. Touloumtzis.
+ * Copyright (c) 2009-2025 Michael P. Touloumtzis.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -22,6 +22,7 @@
 
 #include <assert.h>
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 
 #include <util/memutil.h>
@@ -29,7 +30,10 @@
 #include <util/symtab.h>
 #include <util/wordtab.h>
 
+#include "env.h"
+#include "mlc.h"
 #include "node.h"
+#include "prim.h"
 #include "term.h"
 #include "unflatten.h"
 
@@ -58,11 +62,11 @@
  * variable, which increases as we enter abstractions, performs this
  * role.
  *
- * A slight complication is that our copies are nested--at any point
- * we can encounter a node which points upwards--so we build a linked
- * list of cutoffs and 'deltas' for shifting, allowing us to map a
- * bound variable back through all nested copies to the index it
- * should hold in the tree we're constructing.
+ * A complication is that our copies are nested--at any point we can
+ * encounter a node which points upwards--so we build a linked list
+ * of cutoffs and deltas for shifting, allowing us to map a bound
+ * variable back through all nested copies to the index it should
+ * hold in the tree we're constructing.
  */
 
 struct context {
@@ -71,8 +75,27 @@ struct context {
 	size_t nformals;
 };
 
+static void print_context(const struct context *context)
+{
+	putchar('{');
+	for (/* nada */; context; context = context->outer) {
+		putchar('<');
+		for (size_t i = 1; i < context->nformals; ++i) {
+			if (i > 1) putchar(',');
+			fputs(symtab_lookup(context->formals[i]), stdout);
+		}
+		putchar('>');
+	}
+	putchar('}');
+}
+
 static symbol_mt name_lookup(int up, int across, const struct context *context)
 {
+	if (trace_unflatten) {
+		fputs("name_lookup: ", stdout);
+		print_context(context);
+		printf(" up: %d across: %d\n", up, across);
+	}
 	for (assert(up >= 0); up--; assert(context))
 		context = context->outer;
 	assert(across < context->nformals);
@@ -100,16 +123,82 @@ struct shift {
 	int delta, cutoff;
 };
 
+static void print_shift(const struct shift *shift)
+{
+	putchar('(');
+	for (bool first = true; shift->delta; shift = shift->prev) {
+		if (first) first = false; else putchar(',');
+		printf("/%d+%d", shift->cutoff, shift->delta);
+	}
+	putchar(')');
+}
+
+/*
+ * Expanding on the above comment re the 'complication' of nested copies,
+ * this is the key point at which we fix up bound variable indexes.
+ *
+ * When traversing an explicit substitution, in general our interpretation
+ * of the term being substituted is invariant across the substitution,
+ * i.e. an abstraction is still an abstraction, a primitive number is
+ * still a primitive number, etc.  The exception is bound variable indexes
+ * (specifically their 'up' portions), which might refer to abstractions
+ * which are outside the node being substituted, and which are relative
+ * to the abstraction depth at which the substituted node appears.  These
+ * may need to be adjusted to still make sense at the substitution point.
+ * For Lambda Calculus interpreters which work via term copying, this is
+ * the well known "shifting" operation on De Bruijn indexes.
+ *
+ * When the abstraction depth of the substitution point and the
+ * substituted node are identical, we have no issue.  The issue arises
+ * when we're substituting a node from a lower abtraction depth (closer
+ * to the root of the node tree than the substitution point).  In this
+ * case, locally free variables from the node being substituted may need
+ * to be increased to reflect the greater number of abstractions they'll
+ * need to traverse to reach their binders.
+ *
+ * Substituting a node from a *higher* abstraction depth is not a thing.
+ * This would mean referencing a node out of the context of its
+ * abstraction binders, which is not a sensical operation.  So the shift
+ * ('delta' below) is always positive.
+ *
+ * Since a node being substituted may have explicit substitutions of its
+ * own, we conduct this process recursively.  If at any point a variable
+ * is locally bound (below the abstraction depth cutoff point requiring
+ * a shift) we're done--that variable's De Bruijn index and its binder
+ * are both present in the subtree we're processing and are thus both
+ * present in any larger tree containing that subtree.  But a chain of
+ * substitutions, each of which pulls a locally free variable to a
+ * greater abstraction depth, may need to repeatedly adjust the variable.
+ *
+ * An example which requires multiple shifts due to nested substitutions:
+ *
+ *	[a. [x. a] [y. [z. y]] [s. [t. [u. [v. s]]]]]
+ *
+ * The up-index of the bound variable 'a' in '[x. a]' is originally 1,
+ * since it is bound in the 2nd surrounding abstraction (up-indexes are
+ * 0-based).  When '[x. a]' is substituted for 'y' in '[y. [z. y]]',
+ * the bound variable a is pushed 1 layer deeper (it needs to traverse
+ * z's binder) so its index becomes 2.  Note that y's binder is no longer
+ * relevant since it is eliminated via beta-reduction.
+ *
+ * Similarly, when '[z. [x. a]]' is substituted for 's' in the remaining
+ * abstraction, 'a' is pushed 3 layers deeper (for t, u, and v) so its
+ * up-index becomes 5.
+ *
+ * We don't actually perform any of these shifting operations during
+ * reduction--substitution is an O(1) operation which doesn't require
+ * deep term traversals.  All shifting is deferred to this unflattening
+ * (term readback) stage, and we perform it on encountering each bound
+ * variable by adjusting its index.
+ *
+ * A shift with delta == 0 marks the end of a substitution chain; we
+ * start unflattening with one as a terminator, but only add shifts when
+ * we link across abstraction depths (so elsewhere delta > 0).
+ */
 static int shift_index(int index, const struct shift *shift)
 {
-	/*
-	 * A shift with delta == 0 marks the end of the line; we
-	 * start with one as a terminator but only add shifts when
-	 * we link across abstraction depths (so delta > 0).
-	 */
-	for (assert(shift); shift->delta; shift = shift->prev)
-		if (index >= shift->cutoff)
-			index += shift->delta;
+	while (shift->delta && index >= shift->cutoff)
+		index += shift->delta, shift = shift->prev;
 	return index;
 }
 
@@ -118,13 +207,26 @@ static struct term *unflatten_node(const struct node *node, int cutoff,
 				   struct shift *shift,
 				   struct unshare *unshare);
 
+static struct term *unflatten_slot(struct slot slot, int depth, int cutoff,
+				  const struct context *context,
+				  struct shift *shift, struct unshare *unshare);
+
+static struct term *unflatten_subst(const struct node *subst,
+				    int depth, int cutoff,
+				    const struct context *context,
+				    struct shift *shift,
+				    struct unshare *unshare);
+
 static struct term *unflatten_body(const struct node *node, int cutoff,
 				   const struct context *context,
 				   struct shift *shift,
 				   struct unshare *unshare)
 {
 	assert(node->variety == NODE_SENTINEL);
-	return unflatten_node(node->next, cutoff, context, shift, unshare);
+	assert(node->nslots == 1);
+	assert(node->slots[0].variety == SLOT_SUBST);
+	return unflatten_subst(node->slots[0].subst, node->depth, cutoff,
+			       context, shift, unshare);
 }
 
 static struct term *unflatten_abs(const struct node *node, int cutoff,
@@ -152,12 +254,42 @@ static struct term *unflatten_abs(const struct node *node, int cutoff,
 		.nformals = node->nslots,
 	};
 
-	/* node can only have one body for now */
-	struct term **bodies = xmalloc(sizeof *bodies);
-	bodies[0] = unflatten_body(body, cutoff + 1, &scope, shift, unshare);
+	struct term *ub =
+		unflatten_body(body, cutoff + 1, &scope, shift, unshare);
 	return node->variety == NODE_FIX ?
-		TermFix(node->nslots, formals, 1, bodies) :
-		TermAbs(node->nslots, formals, 1, bodies);
+		TermFix(node->nslots, formals, ub) :
+		TermAbs(node->nslots, formals, ub);
+}
+
+static struct term *unflatten_let(const struct node *node, int cutoff,
+				  const struct context *context,
+				  struct shift *shift, struct unshare *unshare)
+{
+	assert(node->variety == NODE_LET);
+
+	assert(node->nslots);
+	assert(node->slots[0].variety == SLOT_BODY);
+	struct node *body = node->slots[0].subst;
+	assert(body->variety == NODE_SENTINEL);
+	assert(body->depth == node->depth + 1);
+
+	symbol_mt *vars = xmalloc(sizeof *vars * node->nslots);
+	struct term **vals = xmalloc(sizeof *vals * node->nslots);
+	vars[0] = the_empty_symbol;
+	vals[0] = TermPrim(&prim_undefined);
+	for (size_t i = 1; i < node->nslots; ++i) {
+		vars[i] = symtab_gensym();
+		vals[i] = unflatten_slot(node->slots[i], node->depth,
+					 cutoff, context, shift, unshare);
+	}
+
+	struct context scope = {
+		.outer = context, 
+		.formals = vars,
+		.nformals = node->nslots,
+	};
+	return TermLet(node->nslots, vars, vals, unflatten_body(
+		body, cutoff + 1, &scope, shift, unshare));
 }
 
 static struct term *unflatten_slot(struct slot slot, int depth, int cutoff,
@@ -171,39 +303,63 @@ static struct term *unflatten_slot(struct slot slot, int depth, int cutoff,
 	case SLOT_BOUND: {
 		shift->cutoff = cutoff;
 		int shifted = shift_index(slot.bv.up, shift);
-		return TermBoundVar(shifted, slot.bv.across,
-				    name_lookup(shifted, slot.bv.across,
-						context));
+		if (trace_unflatten) {
+			printf("SLOT_BOUND bv.up:%d cutoff:%d "
+				"shifted:%d shift:",
+				slot.bv.up, cutoff, shifted);
+			print_shift(shift);
+			putchar('\n');
+		}
+		return TermVar(shifted, slot.bv.across,
+			       name_lookup(shifted, slot.bv.across, context));
 	}
-	case SLOT_FREE: return slot.term;
+	case SLOT_CONSTANT: return TermConstant(env_at(slot.index));
 	case SLOT_NUM: return TermNum(slot.num);
 	case SLOT_PRIM: return TermPrim(slot.prim);
 	case SLOT_STRING: return TermString(xstrdup(slot.str));
+	case SLOT_SYMBOL: return TermSymbol(slot.sym);
 	default: /* handled below... */;
 	}
 
 	assert(slot.variety == SLOT_SUBST);
+	return unflatten_subst(slot.subst, depth, cutoff,
+			       context, shift, unshare);
+}
 
-	struct node *target = slot.subst;
-	assert(target->nref > 0);
-	assert(target->depth <= depth);
-	if (target->depth < depth) {
+static struct term *unflatten_subst(const struct node *subst,
+				    int depth, int cutoff,
+				    const struct context *context,
+				    struct shift *shift,
+				    struct unshare *unshare)
+{
+	assert(subst->nref > 0);
+	assert(subst->depth <= depth);
+	if (subst->depth < depth) {
 		shift->cutoff = cutoff;
 		struct shift nextshift = {
 			.prev = shift,
-			.delta = depth - target->depth,
+			.delta = depth - subst->depth,
 			.cutoff = 0,
 		};
 		assert(nextshift.delta);
-		return unflatten_node(target, 0, context, &nextshift, unshare);
+		return unflatten_node(subst, 0, context, &nextshift, unshare);
 	}
-	return unflatten_node(target, cutoff, context, shift, unshare);
+	return unflatten_node(subst, cutoff, context, shift, unshare);
 }
 
 static struct term *unflatten_node(const struct node *node, int cutoff,
 				   const struct context *context,
 				   struct shift *shift, struct unshare *unshare)
 {
+	if (trace_unflatten) {
+		fputs("unflatten_node: ", stdout);
+		print_context(context);
+		print_shift(shift);
+		printf("/%d ", cutoff);
+		node_print(node);
+		putchar('\n');
+	}
+
 	/*
 	 * Do we need to truncate due to superlinear expansion?  We
 	 * actually allow an expansion factor of O(N log N), while
@@ -224,6 +380,8 @@ static struct term *unflatten_node(const struct node *node, int cutoff,
 	case NODE_ABS:
 	case NODE_FIX:
 		return unflatten_abs(node, cutoff, context, shift, unshare);
+	case NODE_LET:
+		return unflatten_let(node, cutoff, context, shift, unshare);
 	case NODE_APP:
 	case NODE_CELL:
 	case NODE_TEST:

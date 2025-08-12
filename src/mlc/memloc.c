@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009-2022 Michael P. Touloumtzis.
+ * Copyright (c) 2009-2025 Michael P. Touloumtzis.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -20,30 +20,63 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
-#include <stdbool.h>
-
-#include <util/wordtab.h>
-#include <util/symtab.h>
+#include <stdint.h>
 
 #include "memloc.h"
+#include "node.h"
 
-#define MEMLOC_SIZE_HINT 100
-#define GENSYM_PREFIX_LENGTH 3		/* "gen" */
+/*
+ * Start with letters, not numbers, to make our base-62 numerals look
+ * more like valid identifiers (typically... this doesn't guarantee
+ * they won't start with a numeral).
+ */
+static const char base62digits [] =
+	"ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	"abcdefghijklmnopqrstuvwxyz"
+	"0123456789";
 
-static struct wordtab the_addr_syms;
+#define MEMLOC_BUFFERS 32	/* enough for any printf? */
+#define BASE62_WORD_SIZE 12	/* enough for 2^64 + '\0' in base 62 */
+
+static char memloc_buffers [MEMLOC_BUFFERS][BASE62_WORD_SIZE];
+static unsigned memloc_buffer;
+
+static void base62(uintptr_t n, char *buf)
+{
+	if (!n) {
+		buf[0] = 'A', buf[1] = '\0';	/* n.b. 'A' is 0th digit */
+		return;
+	}
+
+	char *ptr = buf;
+	for (/* nada */; n; n /= 62)
+		*ptr++ = base62digits[n % 62];
+	*ptr-- = '\0';
+	while (ptr > buf) {
+		char tmp = *ptr;
+		*ptr-- = *buf;
+		*buf++ = tmp;
+	}
+}
 
 const char *memloc(const void *addr)
 {
-	static bool initialized = false;
-	if (!initialized) {
-		wordtab_init(&the_addr_syms, MEMLOC_SIZE_HINT);
-		initialized = true;
+	static uintptr_t base = 0;
+	if (!base) {
+		/*
+		 * We use a heap pointer to a representative-sized
+		 * object as the zero point for our numbers.
+		 */
+		struct node *node = NodeNum(NULL, 0, 1);
+		base = (uintptr_t) node;
+		node_free(node);
 	}
-	symbol_mt sym = (symbol_mt) (word)
-		wordtab_get(&the_addr_syms, (word) addr);
-	if (!sym) {
-		sym = symtab_gensym();
-		wordtab_put(&the_addr_syms, (word) addr, (void*) (word) sym);
-	}
-	return symtab_lookup(sym) + GENSYM_PREFIX_LENGTH;
+	uintptr_t curr = (uintptr_t) addr,
+		  diff = curr > base ?
+			(curr - base) * 2 + 1 :
+			(base - curr) * 2;
+	if (++memloc_buffer >= MEMLOC_BUFFERS)
+		memloc_buffer = 0;
+	base62(diff, memloc_buffers[memloc_buffer]);
+	return memloc_buffers[memloc_buffer];
 }

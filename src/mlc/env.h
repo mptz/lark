@@ -1,7 +1,7 @@
 #ifndef LARK_MLC_ENV_H
 #define LARK_MLC_ENV_H
 /*
- * Copyright (c) 2009-2022 Michael P. Touloumtzis.
+ * Copyright (c) 2009-2025 Michael P. Touloumtzis.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -25,42 +25,51 @@
 /*
  * A global environment of free variables and defined substitutions.
  *
- * The environment tracks free variables (i.e. maps symbols to terms of
- * variety TERM_FREE_VAR) to guarantee that each free instance of a name
- * in a term resolves to the same term.  The first use of a free name in
- * any term implicitly extends the environment with a fresh variable;
- * subsequent free uses of that name resolve to the same variable.
+ * We're a little free (pun intended) with our use of the technical term
+ * 'free variable' vis a vis its Lambda Calculus use.  In the Lambda
+ * Calculus, all syntactically valid variable names are semantically valid
+ * but some are free i.e. not bound by enclosing lambda expressions.  Such
+ * free variables are manipulable as terms but not substituted-for.
+ *
+ * We instead require free variables to be declared; declaration-by-mention
+ * (implicit creation of free variables) is too error-prone in a software
+ * engineering setting.  In our usage, a free variable is a declared variable
+ * with no associated value.  Our reduction implementation treats such
+ * variables as self-resolving i.e. they can be manipulated but resolve to
+ * themselves rather than to values.
  *
  * The environment can also be explicitly extended with defined names
- * e.g. "id := \x. x", in which case free uses of the name "id" will
- * subsequently resolve to the root of "\x. x" (this substitution is
- * currently implemented via lambda lifting in resolve()).
+ * e.g. "id := [x. x]", in which case free uses of the name "id" will
+ * subsequently resolve to the root of "[x. x]".  This substitution is
+ * currently implemented via lambda lifting in resolve().
  *
- * A name added to the environment by definition must be distinct from
- * all prior names, whether those names were added implicitly by use of
- * free variables or by definition.  Failure by redefinition yields a
- * returned entry with .var == NULL.
+ * The environment is namespaced; names in the global environment, whether
+ * declared or defined, must be unique in their namespaces but may exist
+ * alongside identical names in other spaces.  Name lookup fails unless
+ * the combination of name and active namespaces yields exactly one value.
  */
 
 #include <stdbool.h>
 
-#include <util/symtab.h>
+#include <util/symtab.h>	/* symbol_mt */
 
-/* not the ideal location for this, but no obvious better one */
-extern symbol_mt the_placeholder_symbol;
-
+struct binder;
+struct node;
 struct term;
-struct env_entry {
-	symbol_mt name;
-	unsigned index;
-	struct term *var, *val;
-};
-extern int env_entry_cmp(const void *a, const void *b);	/* for qsort */
+struct wordtab;
 
 extern void env_init(void);
 extern void env_dump(const char *substr);
-extern struct env_entry env_declare(symbol_mt name);
-extern struct env_entry env_define(symbol_mt name, struct term *val);
+extern const struct binder *env_at(size_t index);
+extern struct binder *env_define(symbol_mt name, symbol_mt space,
+				 struct node *val);
+extern struct binder *env_install(symbol_mt name, symbol_mt space,
+				  struct term *term);
+extern struct binder *env_lookup(symbol_mt name, const struct wordtab *spaces);
+extern void env_get_public(struct wordtab *spaces);
+extern bool env_is_public(symbol_mt space);
+extern void env_public(symbol_mt space);
+extern int env_new_space(symbol_mt space);
 extern bool env_test(symbol_mt name);
 
 #endif /* LARK_MLC_ENV_H */

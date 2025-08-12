@@ -25,6 +25,6 @@
 struct node;
 struct term;
 
-extern struct node *flatten(struct term *term);
+extern struct node *flatten(const struct term *term);
 
 #endif /* LARK_MLC_FLATTEN_H */

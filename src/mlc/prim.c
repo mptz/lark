@@ -85,34 +85,15 @@ prim_replace_redex(struct node *redex, struct node *val)
 	return val;
 }
 
-/*
- * XXX we can probably merge these return helpers.
- */
 static struct node *
-prim_return_num(struct node *redex, double num)
+prim_return_val(struct node *redex, struct slot val)
 {
 	assert(redex->nref == 1);
 	assert(redex->backref);
 	assert(redex->variety == NODE_APP);
 	assert(redex->nslots);
 	node_recycle(redex);
-	redex->slots[0].variety = SLOT_NUM;
-	redex->slots[0].num = num;
-	redex->variety = NODE_VAL;
-	redex->nslots = 1;
-	return redex;
-}
-
-static struct node *
-prim_return_string(struct node *redex, const char *str)
-{
-	assert(redex->nref == 1);
-	assert(redex->backref);
-	assert(redex->variety == NODE_APP);
-	assert(redex->nslots);
-	node_recycle(redex);
-	redex->slots[0].variety = SLOT_STRING;
-	redex->slots[0].str = str;
+	redex->slots[0] = val;
 	redex->variety = NODE_VAL;
 	redex->nslots = 1;
 	return redex;
@@ -203,7 +184,8 @@ static struct node *prim_reduce_arith1(unsigned variety, struct node *redex)
 	case PRIM_NOT:	val = !arg; break;
 	default: panicf("Unhandled primitive variety %u\n", variety);
 	}
-	return prim_return_num(redex, val);
+	return prim_return_val(redex, (struct slot) { .variety = SLOT_NUM,
+						      .num = val });
 }
 
 static struct node *prim_reduce_arith2(unsigned variety, struct node *redex)
@@ -229,7 +211,8 @@ static struct node *prim_reduce_arith2(unsigned variety, struct node *redex)
 	case PRIM_XOR:	val = !lhs ^ !rhs; break;	/* logical XOR */
 	default: panicf("Unhandled primitive variety %u\n", variety);
 	}
-	return prim_return_num(redex, val);
+	return prim_return_val(redex, (struct slot) { .variety = SLOT_NUM,
+						      .num = val });
 }
 
 static struct node *prim_reduce_at(unsigned variety, struct node *redex)
@@ -275,7 +258,8 @@ static struct node *prim_reduce_cell_num(unsigned variety, struct node *redex)
 		known_cell(redex, 1, &cell)))
 		return redex->prev;
 	val = cell->nslots;
-	return prim_return_num(redex, val);
+	return prim_return_val(redex, (struct slot) { .variety = SLOT_NUM,
+						      .num = val });
 }
 
 static struct node *prim_reduce_fill(unsigned variety, struct node *redex)
@@ -360,7 +344,8 @@ static struct node *prim_reduce_find(unsigned variety, struct node *redex)
 		    cell->slots[i].subst->slots[0].num == arg)
 			break;
 	val = i == cell->nslots ? -1.0 : i;
-	return prim_return_num(redex, val);
+	return prim_return_val(redex, (struct slot) { .variety = SLOT_NUM,
+						      .num = val });
 }
 
 static struct node *prim_reduce_fuse(unsigned variety, struct node *redex)
@@ -457,7 +442,8 @@ static struct node *prim_reduce_str2(unsigned variety, struct node *redex)
 	}
 	default: panicf("Unhandled primitive variety %u\n", variety);
 	}
-	return prim_return_string(redex, val);
+	return prim_return_val(redex, (struct slot) { .variety = SLOT_STRING,
+						      .str = val });
 }
 
 static struct node *prim_reduce_test(unsigned variety, struct node *redex)
@@ -480,7 +466,8 @@ static struct node *prim_reduce_test(unsigned variety, struct node *redex)
 	default:
 		panicf("Unhandled primitive variety %u\n", variety);
 	}
-	return prim_return_num(redex, val);
+	return prim_return_val(redex, (struct slot) { .variety = SLOT_NUM,
+						      .num = val });
 }
 
 struct prim prim_add = {

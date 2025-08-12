@@ -1,5 +1,3 @@
-#ifndef LARK_MLC_HEAP_H
-#define LARK_MLC_HEAP_H
 /*
  * Copyright (c) 2009-2024 Michael P. Touloumtzis.
  *
@@ -22,19 +20,12 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
-#include <stddef.h>
+#include "binder.h"
 
-extern float the_heap_pressure, the_heap_threshold;
-
-struct node;
-
-void node_heap_init(void);
-struct node *node_heap_alloc(size_t nslots);
-void node_heap_free(struct node *node);
-
-void node_heap_baseline(void);		/* hard reset after heap -> global */
-void node_heap_calibrate(void);		/* set threshold after gc */
-void print_heap_stats(void);
-void reset_heap_stats(void);		/* soft reset of allocs/frees */
-
-#endif /* LARK_MLC_HEAP_H */
+int binder_ptr_cmp(const void *a, const void *b)
+{
+	const struct binder *ba = *(const struct binder *const *) a,
+			    *bb = *(const struct binder *const *) b;
+	return	(ba->index > bb->index) ? +1 :
+		(ba->index < bb->index) ? -1 : 0;
+}

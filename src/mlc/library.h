@@ -1,7 +1,7 @@
-#ifndef LARK_MLC_HEAP_H
-#define LARK_MLC_HEAP_H
+#ifndef LARK_MLC_LIBRARY_H
+#define LARK_MLC_LIBRARY_H
 /*
- * Copyright (c) 2009-2024 Michael P. Touloumtzis.
+ * Copyright (c) 2009-2025 Michael P. Touloumtzis.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -22,19 +22,20 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
-#include <stddef.h>
+/*
+ * At any given time we're resolving (at most) once sourcefile.
+ * Library functionality handles swapping among them and keeping
+ * this pointer up to date.  Only guaranteed to be valid during
+ * resolution.
+ */
+struct sourcefile;
+extern struct sourcefile *the_current_sourcefile;
 
-extern float the_heap_pressure, the_heap_threshold;
+extern int library_load(const char *name);
+extern int library_load_files(int nnames, char *const names[]);
+extern int library_read_stdin(void);
+extern int library_repl_init(void);
+extern int library_repl_line(const char *line, int lineno);
+extern int library_repl_fini(void);
 
-struct node;
-
-void node_heap_init(void);
-struct node *node_heap_alloc(size_t nslots);
-void node_heap_free(struct node *node);
-
-void node_heap_baseline(void);		/* hard reset after heap -> global */
-void node_heap_calibrate(void);		/* set threshold after gc */
-void print_heap_stats(void);
-void reset_heap_stats(void);		/* soft reset of allocs/frees */
-
-#endif /* LARK_MLC_HEAP_H */
+#endif /* LARK_MLC_LIBRARY_H */

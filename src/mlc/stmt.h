@@ -1,7 +1,7 @@
 #ifndef LARK_MLC_STMT_H
 #define LARK_MLC_STMT_H
 /*
- * Copyright (c) 2009-2022 Michael P. Touloumtzis.
+ * Copyright (c) 2009-2025 Michael P. Touloumtzis.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -26,8 +26,41 @@
 
 struct form;
 
-extern void stmt_define(symbol_mt name, struct form *form);
-extern void stmt_list(struct form *form);
-extern void stmt_reduce(struct form *form);
+enum stmt_variety {
+	STMT_INVALID,
+	STMT_CONCEAL,
+	STMT_DEF,
+	STMT_ECHO,
+	STMT_INSPECT,
+	STMT_PUBLIC,
+	STMT_REQUIRE,
+	STMT_REVEAL,
+	STMT_SECTION,
+	STMT_VAL,
+} __attribute__ ((packed));
+
+struct stmt {
+	enum stmt_variety variety;
+	int line0, line1;
+	union {
+		struct { struct form *var, *val; unsigned flags; } def;
+		struct { struct form	   *val; unsigned flags; } val;
+		struct form *form;
+		symbol_mt sym;
+	};
+};
+
+extern struct stmt *StmtConceal(symbol_mt id);
+extern struct stmt *StmtDef(struct form *var, struct form *val, unsigned flags);
+extern struct stmt *StmtEcho(struct form *str);
+extern struct stmt *StmtInspect(symbol_mt id);
+extern struct stmt *StmtPublic(void);
+extern struct stmt *StmtRequire(symbol_mt id);
+extern struct stmt *StmtReveal(symbol_mt id);
+extern struct stmt *StmtSection(symbol_mt id);
+extern struct stmt *StmtVal(struct form *val, unsigned flags);
+
+extern void stmt_free(struct stmt *stmt);
+extern void stmt_eval(const struct stmt *stmt);
 
 #endif /* LARK_MLC_STMT_H */

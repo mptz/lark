@@ -1,7 +1,7 @@
 #ifndef LARK_MLC_MEMLOC_H
 #define LARK_MLC_MEMLOC_H
 /*
- * Copyright (c) 2009-2022 Michael P. Touloumtzis.
+ * Copyright (c) 2009-2025 Michael P. Touloumtzis.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -23,12 +23,20 @@
  */
 
 /*
- * Return a unique (generated) symbol for each distinct memory location.
- * The alternative of printing raw pointer values makes sharing much
- * harder to visually parse.  Right now we're returning the symbol as a
- * C string rather than a symbol_mt since this is just used for printing.
+ * Generate shorter (string) representations of pointers which are easier
+ * to visually parse than long hexadecimal numbers.  We use two tricks:
+ * (1) Represent pointers not as offsets from the beginning of virtual
+ *     memory, but as distances from an arbitrary zero point in the heap.
+ *     Encode positive and negative numbers as even and odd respectively.
+ * (2) Represent numbers in base 62 rather than base 10 or base 16.
+ *
+ * memloc returns pointers to a small pool of buffers which we cycle through
+ * with each call.  It's not reentrant, but we could switch to thread-local
+ * buffer pools to gain thread safety.  The intended use in printf, panicf,
+ * and other diagnostic outputs only requires persistence for the duration
+ * of the calling output function.  Use strdup() if the addresses will be
+ * retained non-ephemerally.
  */
-
 extern const char *memloc(const void *addr);
 
 #endif /* LARK_MLC_MEMLOC_H */

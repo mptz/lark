@@ -1,7 +1,7 @@
 #ifndef LARK_MLC_MLC_H
 #define LARK_MLC_MLC_H
 /*
- * Copyright (c) 2009-2022 Michael P. Touloumtzis.
+ * Copyright (c) 2009-2025 Michael P. Touloumtzis.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -22,9 +22,16 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
+#include <util/symtab.h>	/* symbol_mt */
+
+extern symbol_mt the_placeholder_symbol;	/* "_" */
+extern symbol_mt the_undefined_symbol;
+
 extern int listing_setting;
 extern int quiet_setting;
 extern int mlc_yydebug;
 extern int mlc_yyparse(void *scanner);
+
+extern int trace_unflatten;
 
 #endif /* LARK_MLC_MLC_H */

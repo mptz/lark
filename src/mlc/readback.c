@@ -27,8 +27,10 @@
 #include <util/message.h>
 #include <util/wordbuf.h>
 
+#include "binder.h"
 #include "env.h"
 #include "form.h"
+#include "mlc.h"
 #include "prim.h"
 #include "readback.h"
 #include "term.h"
@@ -40,6 +42,15 @@
  */
 static symbol_mt fresh_name(symbol_mt name, const struct wordbuf *names)
 {
+	/*
+	 * We don't need fresh names for placeholders... they can't be
+	 * referenced by bound variables.  Likewise when we see the
+	 * empty symbol, it's a placeholder e.g. in the self-reference
+	 * slot of an abstraction, so we can ignore freshening.
+	 */
+	if (name == the_empty_symbol || name == the_placeholder_symbol)
+		return name;
+
 	size_t i, bound;
 	if (env_test(name))
 		goto freshen;
@@ -64,36 +75,25 @@ static struct form *readback_abs(const struct term *abs, struct wordbuf *names)
 {
 	assert(abs->variety == TERM_ABS || abs->variety == TERM_FIX);
 	struct form *params = NULL;
+	symbol_mt self = the_empty_symbol;
 	for (size_t i = 0; i < abs->abs.nformals; ++i) {
 		if (!i) {
 			/* self-reference */
-			/* XXX if we preserve the name we'll need to freshen */
-			wordbuf_push(names, abs->abs.formals[i]);
+			self = fresh_name(abs->abs.formals[i], names);
+			wordbuf_push(names, self);
 			continue;
 		}
-		/*
-		 * We don't need fresh names for placeholders; they
-		 * aren't referenced by bound variables.
-		 */
-		symbol_mt formal =
-			abs->abs.formals[i] == the_placeholder_symbol ?
-			abs->abs.formals[i] :
-			fresh_name(abs->abs.formals[i], names);
+		symbol_mt formal = fresh_name(abs->abs.formals[i], names);
 		wordbuf_push(names, formal);
 		params = FormVarNext(formal, params);
 	}
 	wordbuf_push(names, abs->abs.nformals);
 
-	struct form *bodies = NULL;
-	for (size_t i = 0; i < abs->abs.nbodies; ++i) {
-		struct form *body = readback_term(abs->abs.bodies[i], names);
-		body->prev = bodies, bodies = body;
-	}
-
+	struct form *body = readback_term(abs->abs.body, names);
 	wordbuf_popn(names, abs->abs.nformals + 1 /* for formal count */);
 	return abs->variety == TERM_FIX ?
-		FormFix(FormVar(abs->abs.formals[0]), params, bodies) :
-		FormAbs(params, bodies);
+		FormFix(FormVar(self), params, body) :
+		FormAbs(params, body);
 }
 
 static struct form *readback_app(const struct term *app, struct wordbuf *names)
@@ -135,6 +135,33 @@ readback_cell(const struct term *term, struct wordbuf *names)
 		elt->prev = elts, elts = elt;
 	}
 	return FormCell(elts);
+}
+
+static struct form *readback_let(const struct term *let, struct wordbuf *names)
+{
+	assert(let->variety == TERM_LET);
+	size_t npush = let->let.ndefs + 1;	/* +1 for definition count */
+	word *vars = xmalloc(sizeof *vars * npush), *pvar = vars;
+	struct form *defs = NULL;
+	for (size_t i = 0; i < let->let.ndefs; ++i) {
+		if (!i) {
+			*pvar++ = the_empty_symbol;	/* dummy location */
+			continue;
+		}
+		symbol_mt var = fresh_name(let->let.vars[i], names);
+		*pvar++ = var;
+		struct form *def = FormDefLocal(FormVar(var),
+			readback_term(let->let.vals[i], names));
+		def->prev = defs;
+		defs = def;
+	}
+	*pvar++ = let->let.ndefs;
+	assert(pvar - vars == npush);
+	wordbuf_append(names, vars, npush);
+
+	struct form *body = readback_term(let->let.body, names);
+	wordbuf_popn(names, npush);
+	return FormLet(defs, body);
 }
 
 static struct form *readback_name(int up, int across, struct wordbuf *names)
@@ -195,22 +222,26 @@ static struct form *readback_term(const struct term *term,
 		return readback_abs(term, names);
 	case TERM_APP:
 		return readback_app(term, names);
-	case TERM_BOUND_VAR:
-		return readback_name(term->bv.up, term->bv.across, names);
 	case TERM_CELL:
 		return readback_cell(term, names);
-	case TERM_FREE_VAR:
-		return FormVar(term->fv.name);
+	case TERM_CONSTANT:
+		return FormVar(term->constant.binder->name);
+	case TERM_LET:
+		return readback_let(term, names);
 	case TERM_NUM:
 		return FormNum(term->num);
 	case TERM_PRIM:
 		return FormPrim(term->prim, NULL);
 	case TERM_PRUNED:
-		return FormVarS("<PRUNED>");
+		return FormVarS("$pruned");
 	case TERM_STRING:
 		return FormString(xstrdup(term->str));
+	case TERM_SYMBOL:
+		return FormSymbol(term->sym);
 	case TERM_TEST:
 		return readback_test(term, names);
+	case TERM_VAR:
+		return readback_name(term->var.up, term->var.across, names);
 	default:
 		panicf("Unhandled term variety %d\n", term->variety);
 	}
