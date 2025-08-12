@@ -83,9 +83,8 @@ static int shift_index(int index, const struct shift *shift)
 	 * start with one as a terminator but only add shifts when
 	 * we link across abstraction depths (so delta > 0).
 	 */
-	for (assert(shift); shift->delta; shift = shift->prev)
-		if (index >= shift->cutoff)
-			index += shift->delta;
+	while (shift->delta && index >= shift->cutoff)
+		index += shift->delta, shift = shift->prev;
 	return index;
 }
 
