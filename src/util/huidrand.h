@@ -24,5 +24,6 @@
 
 extern void huid_init(const char *nonce, const char *attestor);
 extern void huid_fresh(void *buf, unsigned bufsize);
+extern void huid_fresh_str(char *buf, unsigned bufsize);
 
 #endif /* LARK_UTIL_HUIDRAND_H */

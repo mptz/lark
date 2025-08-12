@@ -307,3 +307,11 @@ void huid_fresh(void *buf, unsigned bufsize)
 	xor256bit(mixbuf, feedbackbuf, noncebuf);
 	memcpy(buf, mixbuf, HUID_BYTES);
 }
+
+void huid_fresh_str(char *buf, unsigned bufsize)
+{
+	if (bufsize < HUID_STR) panic("Buffer too small!\n");
+	char bbuf [HUID_BYTES];
+	huid_fresh(bbuf, sizeof bbuf);
+	huid_encode(buf, bbuf);
+}
