@@ -1,0 +1,182 @@
+|* Test primitive operations.
+|.......Require #YGTjJI4S.wsVUUU0D.87x5NaKW, stuck terms
+
+$echo "Testing primitive addition".
+0 + 0.
+0 + 1.
+1 + 1.
+1 + -1.
+-1 + -1.
+997 + 3.
+77 + -76.
+
+$echo "Testing primitive subtraction".
+0 - 0.
+0 - 1.
+1 - 1.
+1 - 0.
+-1 - 1.
+1 - -1.
+27 - 30.
+50 - 25.
+5e6 - 1.
+5e6 - 10.
+5e6 - 1000000.
+
+$echo "Testing primitive multiplication".
+0 * 0.
+0 * 1.
+1 * 0.
+1 * 1.
+1 * 2.
+2 * 2.
+-2 * 2.
+-2 * -2.
+1.001 * 1.001.
+
+$echo "Testing primitive division".
+1 / 1.
+2 / 1.
+2 / 2.
+4 / 2.
+3 / 2.
+3 / -3.
+1 / 0.
+
+$echo "Testing primitive equalities".
+0 == 0.
+0 == 1.
+1 == 1.
+1 == 0.
+1 == -1.
+-1 == 1.
+1 == 2.
+1 + 1 == 2.
+5e6 == 5e6 - 1.
+0 <> 0.
+0 <> 1.
+1 <> 1.
+1 <> 0.
+1 <> -1.
+-1 <> 1.
+1 <> 2.
+1 + 1 <> 2.
+5e6 <> 5e6 - 1.
+
+$echo "Testing primitive inequalities".
+0 < 0.
+0 < 1.
+-1 < 0.
+-1 < 1.
+1 < -1.
+1 < 2.
+1 < 1.
+2 < 1.
+2 < 2.
+-2 < -2.
+0 <= 0.
+0 <= 1.
+-1 <= 0.
+-1 <= 1.
+1 <= -1.
+1 <= 2.
+1 <= 1.
+2 <= 1.
+2 <= 2.
+-2 <= -2.
+0 > 0.
+0 > 1.
+-1 > 0.
+-1 > 1.
+1 > -1.
+1 > 2.
+1 > 1.
+2 > 1.
+2 > 2.
+-2 > -2.
+0 >= 0.
+0 >= 1.
+-1 >= 0.
+-1 >= 1.
+1 >= -1.
+1 >= 2.
+1 >= 1.
+2 >= 1.
+2 >= 2.
+-2 >= -2.
+
+$echo "Testing order of operations".
+3 + 5 * 5.
+9 - 2 / 2.
+3 == 1.5 + 1.5.
+
+$echo "Testing Boolean primitives: $and".
+$and (0, 0).
+$and (0, 1).
+$and (1, 0).
+$and (1, 1).
+$and (0, -2).
+$and (-2, 0).
+$and (-2, 2).
+
+$echo "Testing Boolean primitives: $or".
+$or (0, 0).
+$or (0, 1).
+$or (1, 0).
+$or (1, 1).
+$or (0, -2).
+$or (-2, 0).
+$or (-2, 2).
+
+$echo "Testing Boolean primitives: $xor".
+$xor (0, 0).
+$xor (0, 1).
+$xor (1, 0).
+$xor (1, 1).
+$xor (0, -2).
+$xor (-2, 0).
+$xor (-2, 2).
+
+$echo "Testing Boolean primitives: $not".
+$not (0).
+$not (1).
+$not (-1).
+$not (3.14159).
+
+$echo "Testing floating-point primitives: $is-integral".
+$is-integral (0).
+$is-integral (42).
+$is-integral (-88).
+$is-integral (1.5).
+$is-integral (3.14159).
+$is-integral (-99.99).
+
+$echo "Testing irreducible primitives".
+#x + 0.
+0 + #x.
+#x + #y.
+[x. 4 + x] + 2.
+#a == 5.
+5 == #a.
+#a == #b.
+[x, y. x == y].
+$not (#x).
+$at (#x, #y).
+$at (#x, [1 | 2]).
+$at (#x, []).
+[n. $at (n, [#a | #b | #c])].
+$at (0, #y).
+$at (1 + 1, #y).
+[cell. $at (0, cell)].
+
+$echo "Testing stuck primitives".
+stuck + 0.
+0 + stuck.
+stuck + stuck.
+stuck == 5.
+5 == stuck.
+stuck == stuck.
+$not (stuck).
+$at (stuck, [1 | 2]).
+$at (3, stuck).
+$at (stuck, stuck).

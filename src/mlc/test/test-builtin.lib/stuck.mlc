@@ -1,0 +1,7 @@
+|________________________________Section #YGTjJI4S.wsVUUU0D.87x5NaKW_______
+
+|* Generate a stuck (unevaluable) term by concealing an ordinary one.
+stuck := #stuck.
+$conceal stuck.
+stuck2 := #stuck2.
+$conceal stuck2.

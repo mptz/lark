@@ -1,0 +1,71 @@
+|MLC Notebook v1|
+
+Tests to detect regressions of past bug fixes, with emphasis on subtle
+reduction issues.
+
+|:	$echo "Testing regression cases".
+
+|____________________________________________________________Section_______
+
+This term gets stuck in the ML implementation which accompanied the
+Accattoli, Condoluci, & Sacerdoti Coen paper; the rename rule filters
+on Shared and Var cells and so doesn't consider renames pointing
+to abstractions, which are critical.  Thus a rename pointing to an
+abstraction gets skipped, the abstraction is hidden behind a rename &
+is invisible to the beta-reduction steps, and we complete the R-to-L
+traversal with intact beta redexes.
+
+|:
+|:	v := #v.
+|:	$conceal v.
+|:	[x. x] ([y. y]) (v).
+|:
+
+|____________________________________________________________Section_______
+
+After implementing primitives, this broke a depth check in uncrumble
+(sometimes) and also surfaced a refcount assertion (sometimes).  I was
+able to track down this inconsistent error to an erroneous reference
+count decrement in the implementation of the '+' primitive which was
+causing a number node to be gc'd while still in use.
+
+|:
+|:	[x. [y. x + y]] (5).
+|:
+
+|____________________________________________________________Section_______
+
+Make sure we don't evaluate cells as though they were applications.
+This evaluated to '2' before we fixed reduction to avoid this.
+
+|:
+|:	[x. x + 1]; [f. [f | 1]].
+|:
+
+|____________________________________________________________Section_______
+
+This triggered an assertion failure after moving from a lifted,
+term-based global environment to a preevaluated node-based global
+environment.  The combination of an explicit substitution in the
+second line (evaluating 'q') and the explicit substitution at the
+head of 'q' in the environment triggered a "Missed rename chain"
+panic in reduce.c.
+
+|:
+|:	q := [x. x] [y. y].
+|:	q.
+|:
+
+|____________________________________________________________Section_______
+
+Another assertion failure trigger with the preevaluated global
+environment.  This time the failed assertion is in unflattening:
+"across < context->nformals".  The code below is a simplification
+of a Church numeral predecessor implementation.
+
+|:
+|:	cons	:= [x, y. [f. y; f (x)]].
+|:	phi	:= [x. cons (x, x)].
+|:	pred	:= [n. n (phi)].
+|:	pred.
+|:

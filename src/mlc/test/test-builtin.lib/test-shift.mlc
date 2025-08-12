@@ -1,0 +1,39 @@
+|MLC Notebook v1|
+
+Tests of bound variable shifting.
+
+|________________________________Section #9GV-Em8J.d4TGjNre.eDvHJG2I_______
+
+Test a single shift during unflattening.  a's upwards index in [x. a]
+starts at 1 since it's bound in the 2nd surrounding abstraction (indexes
+are 0-based).  When [x. a] is substituted for y, the bound variable 'a'
+is pushed one layer deeper so the index (abstraction height of its binder)
+is increased by 1.
+
+|:
+|:	$echo "Testing shifting through one substitution".
+|:
+|:	[a. [x. a] [y. [z. y]]].
+|:
+
+Test nested shifts during unflattening.  The index of 'a' needs to be
+shifted once for its first substitution via 'y' and a second time,
+even deeper, for its second substitution via 's'.
+
+|:
+|:	$echo "Testing shifting through multiple substitutions".
+|:
+|:	[a. [x. a] [y. [z. y]] [s. [t. [u. [v. s]]]]].
+|:
+
+When we added support for reduction to change a sentinel's backreference,
+we broke bound variable shifting in cases in which (1) the backreference
+of a sentinel was updated, and (2) the new reference was at a lower depth
+than the sentinel itself.  These tests check for regression.
+
+|:
+|:	$echo "Testing shifting for substituted bodies".
+|:
+|:	[a. ([x. [y. x]]) ([z. a])].
+|:	[a. [b. ([x. [y. [z. x]]]) ([w. a + b])]].
+|:

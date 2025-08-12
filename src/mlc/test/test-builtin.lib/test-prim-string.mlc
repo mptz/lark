@@ -1,0 +1,16 @@
+|* Test primitive string operations.
+|.......Require #YGTjJI4S.wsVUUU0D.87x5NaKW, stuck terms
+
+$echo "Testing cell primitives: ++ (string concatenation)".
+"" ++ "".
+"" ++ "" ++ "".
+"" ++ "abc".
+"abc" ++ "".
+"abc" ++ "def".
+"abc" ++ "def" ++ "ghi".
+"abc" ++ #unknown.
+#unknown ++ "abc".
+[x. x ++ "abc"].
+[x. "abc" ++ x].
+stuck ++ "abc".
+stuck ++ stuck.

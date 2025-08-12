@@ -1,0 +1,53 @@
+|.......Require #tzNuz8Mh.ZK1TSbod.gw_zhkMK
+|.......Require #t29ihI7k.pn_OFpk4.8F3O9QPj
+
+|*
+|* Test pruning (prevention of exponential blowup) in unflattening.
+|* The code below is from the development of the Sudoku solver; a stuck
+|* term near the bottom results in an exponential unflatten growing to
+|* > 10 GiB of process footprint with no end in sight.  For the purpose
+|* of this test, we don't care too much what the exact output term is,
+|* more that it's pruned before it grows intractably large.
+|* 
+
+first-nine-primes := [2 | 3 | 5 | 7 | 11 | 13 | 17 | 19 | 23].
+digit-to-prime := [d. at (d - 1, first-nine-primes)].
+
+prime-to-digit-key :=
+	[ 0 | 0 | 1 | 2 | 0 | 3 | 0 | 4 | 0 | 0 | 0 | 5 |
+	  0 | 6 | 0 | 0 | 0 | 7 | 0 | 8 | 0 | 0 | 0 | 9 ].
+
+constrain-square := [square, digit.
+	let { dp := digit; digit-to-prime }
+	let { without-digit := square / dp }
+	let { square-contains-digit := $is-integral (without-digit) }
+	[square-contains-digit? without-digit | square]].
+
+square-solution :=
+	[square. [square <= 23? at (square, prime-to-digit-key) | 0]].
+
+apply-constraint := [square, digit.
+	[square?
+
+	let { constrained := constrain-square (square, digit) }
+	let { unchanged := constrained == square }
+	[constrained | constrained; square-solution]
+
+	| [square | 0]]].
+
+constraints-list := [0 | [0 | [0 | [0 | [0 | [7 | [0 | [0 | [0 |
+	[4 | [0 | [0 | [8 | [0 | [8 | [9 | [0 | [0 | [0 | [6 | [7
+	| [3 | [0 | []]]]]]]]]]]]]]]]]]]]]]]].
+
+stuck := #stuck.
+$conceal stuck.
+apply-constraints := [self! i, square, constraints.
+
+	[constraints; is-nil? square |
+
+	let { digit := constraints; car.  remain := constraints; cdr. }
+	[digit == 0? self (i, square, remain) |
+		let { p := apply-constraint (square, digit) }
+		[stuck? "UNSAT" | self (i, p, remain)]]]].
+
+apply-constraints (0, 11, constraints-list).

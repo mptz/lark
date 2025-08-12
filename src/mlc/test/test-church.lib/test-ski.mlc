@@ -1,0 +1,50 @@
+|.......Require #VLWBCVQ5.kSBalCkf.5Ir-lvSl
+
+|* Combinators for SKI combinatorial logic
+I := [x. x].
+K := [x. [_. x]].
+S := [x. [y. [z. (z; x) (z; y)]]].
+
+|* Combinators from Haskell Curry's B, C, K, W system
+B := [x. [y. [z. z; y; x]]].
+C := [x. [y. [z. y; x (z)]]].
+W := [x. [y. y; x (y)]].
+
+$echo "Testing S, K, I combinators".
+I (seven).
+K (six) (three).
+
+|* K is true, S K is false, and postfix (K; S) K is not
+|*          = K; S
+K.
+K; S.
+true (K; S) (K).
+false (K; S) (K).
+
+|* These expressions reduce to I, S, K respectively
+S (K) (I) (K (I) (S)).
+K (S) (I (S (K) (S) (I))).
+S (K) (I) (K).
+
+$echo "Testing B, C, W combinators".
+|* Pairs of lines reduce to identical normal forms
+B.
+S (S; K) (K).
+C.
+S (S (K (S (S; K) (K))) (S)) (K; K).
+W.
+S (S) (K; S).
+I.
+W (K).
+|* These three have identical normal forms
+S.
+B (B (W; B) (C)) (B; B).
+B (W; B) (B (B) (C)).
+
+$echo "Testing SCAM name capture case".
+|* This is the term which alerted me to the fact that the the paper's
+|* handling of bound variables in alpha conversion was erronous--they're
+|* not alpha-converted so we end up with inadvertant capture.  That's
+|* what set me down the road of adding De Bruijn indexes alongside
+|* memory-address-based free variables and explicit substitution nodes.
+S (K (S)) (K).

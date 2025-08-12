@@ -1,0 +1,11 @@
+|.......Require #VLWBCVQ5.kSBalCkf.5Ir-lvSl
+
+id (3).
+id (id).
+id (#apple).
+and (true, true).
+and (true, false).
+or (true, false).
+or (false, false).
+and (true, true); not.
+or (false, false); not.

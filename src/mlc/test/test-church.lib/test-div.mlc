@@ -1,0 +1,8 @@
+|.......Require #VLWBCVQ5.kSBalCkf.5Ir-lvSl
+|.......Require #yPZE8iYU.OB5wLg1y.4qPVHyV1
+
+div (six, three).
+mod (seven, four).
+divmod (five, two).
+#0 divmod (ten, three).
+#1 divmod (nine, four).

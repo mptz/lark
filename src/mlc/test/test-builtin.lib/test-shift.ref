@@ -1,0 +1,15 @@
+Testing shifting through one substitution
+form: [a. [x. a] [y. [z. y]]]
+norm: [a. [z. [x. a]]]
+======================================================================
+Testing shifting through multiple substitutions
+form: [a. [x. a] [y. [z. y]] [s. [t. [u. [v. s]]]]]
+norm: [a. [t. [u. [vN. [z. [x. a]]]]]]
+======================================================================
+Testing shifting for substituted bodies
+form: [a. [x. [y. x]] ([z. a])]
+norm: [a. [y. [z. a]]]
+======================================================================
+form: [a. [b. [x. [y. [z. x]]] ([w. a + b])]]
+norm: [a. [b. [y. [z. [w. a + b]]]]]
+======================================================================

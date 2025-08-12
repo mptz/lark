@@ -1,0 +1,10 @@
+|.......Require #VLWBCVQ5.kSBalCkf.5Ir-lvSl
+
+|* Hard-to-reduce terms of various flavors.
+
+|* Church numerals -> a big number (19683)
+[f. [x. x; (three; three; three) (f)]].
+
+|* Asperti & Guerrini p.19, reduces to #a in exponential time
+I := [x. x].
+#a; (seven; seven) (I).

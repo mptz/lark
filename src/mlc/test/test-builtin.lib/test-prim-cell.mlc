@@ -1,0 +1,48 @@
+|* Test primitive cell operations
+|.......Require #YGTjJI4S.wsVUUU0D.87x5NaKW, stuck terms
+
+|* Test primitive cell operations.
+
+$echo "Testing cell primitives: $at".
+$at (0, [#pass]).
+$at (0, [#pass | #fail]).
+$at (1, [#fail | #pass]).
+$at (1, [#fail0 | #pass | #fail1]).
+[n, c. $at (n, c)] (2, [#fail0 | #fail1 | #pass | #fail2 | #fail3]).
+$at (1, [#a | [#b | #c] | #d]).
+
+$echo "Testing cell primitives: $fill".
+$echo "XXX need basic tests".
+$fill (6, [row. $fill (6, [col. [row | col]])]).
+
+$echo "Testing cell primitives: $fuse".
+$fuse ([], []).
+$fuse ([], [#a]).
+$fuse ([], [#a | #b | #c]).
+$fuse ([#b], []).
+$fuse ([#b | #c | #d], []).
+$fuse ([#a], [#b | #c]).
+$fuse ([#a | #b], [#c]).
+$fuse ([#a | #b], [#c | #d]).
+
+$echo "Testing cell primitives: $is-cell".
+$is-cell ([]).
+$is-cell ([#a]).
+$is-cell ([#a | #b]).
+$is-cell ([#a | #b | #c]).
+$is-cell (0).
+$is-cell (33).
+$is-cell ([x. x]).
+$is-cell ($is-cell).
+$is-cell (#unknown).
+
+$echo "Testing cell primitives: # (number of elements)".
+# [].
+# [#a].
+# [#a | #b].
+# [#a | #b | #c | #d | #e].
+# [[#a | #b]].
+# 3.
+# [x. x].
+# #unknown.
+# stuck.

@@ -1,0 +1,38 @@
+|* Test pair syntax
+|.......Require #YGTjJI4S.wsVUUU0D.87x5NaKW, stuck terms
+
+$echo "Testing pair syntax".
+[#a | #b].
+[0 | 1].
+[0 | [1 | 2]].
+[[x. x + 1] | [y. y - 1]].
+test-cons := [a, b. [a | b]].
+test-cons (3, 4).
+
+test-cons (#apple, test-cons (#banana, #cherry)).
+
+$echo "Testing basic pair destructors".
+#0 [#pass | #fail].
+#1 [#fail | #pass].
+p0 := [#fst | #snd].
+#0 p0.
+#1 p0.
+
+$echo "Testing unevaluated pair destructors".
+#0 #u.
+#0 8.
+#0 [x. x * x].
+#0 stuck.
+
+$echo "Testing nested pairs".
+p1 := [[#a | #b] | [#c | #d]].
+#0 #0 p1.
+#1 #0 p1.
+#0 #1 p1.
+#1 #1 p1.
+carfn := [p. #0 p].
+cdrfn := [p. #1 p].
+p1; carfn; carfn.
+p1; carfn; cdrfn.
+p1; cdrfn; carfn.
+p1; cdrfn; cdrfn.

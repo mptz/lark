@@ -1,0 +1,24 @@
+|.......Require #VLWBCVQ5.kSBalCkf.5Ir-lvSl
+|.......Require #yPZE8iYU.OB5wLg1y.4qPVHyV1
+
+|* These are all cases which broke at some point along the way while
+|* I was struggling to get De Bruijn index shifting logic correct.
+div (six, two).
+pred-primitive (one).
+#0 divmod (five, two).
+#1 divmod (five, two).
+cube (one).
+pow (one, one).
+
+|* And these are cases which broke when I was converting from ES/bites
+|* to nodes
+sub (two, one).
+
+|____________________________________________________________Section_______
+
+|* This case broke when I added arity; it actually revealed an existing
+|* bug in uncrumbling (using unshifted rather than shifted index for
+|* name lookups) which happened to be easier to trigger with arity.
+
+Def {Deep} shifted-index-case := [m, n. cons (m, n)].
+shifted-index-case.
