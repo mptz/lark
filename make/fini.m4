@@ -59,6 +59,18 @@ test-results := $(test-refs:.ref=.runout) $(test-refs:.ref=.runerr)
 .SECONDARY: $(test-results)
 $(subdir)@testclean: clean-files := $(clean-files) $(test-results)
 $(subdir)@test: $(test-refs:.ref=.diff)
+
+# For MLC and eventually other projects: do the same for test libraries.
+# These libraries contain separate reference files for each test, but we
+# concatenate them for the full test run.
+
+test-libs := $(sort $(wildcard $(subdir)test/test-*.lib))
+test-refs := $(test-libs:.lib=.ref)
+.SECONDARY: $(test-refs)
+$(subdir)@testclean: clean-files := $(clean-files) $(test-refs)
+$(subdir)@test: $(test-refs:.ref=.diff)
+
+test-libs :=
 test-refs :=
 test-results :=
 
