@@ -1,74 +1,115 @@
-|*
-|* Copyright (c) 2009-2024 Michael P. Touloumtzis.
-|*
-|* Permission is hereby granted, free of charge, to any person obtaining a
-|* copy of this software and associated documentation files (the "Software"),
-|* to deal in the Software without restriction, including without limitation
-|* the rights to use, copy, modify, merge, publish, distribute, sublicense,
-|* and/or sell copies of the Software, and to permit persons to whom the
-|* Software is furnished to do so, subject to the following conditions:
-|*
-|* The above copyright notice and this permission notice shall be included in
-|* all copies or substantial portions of the Software.
-|*
-|* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-|* OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-|* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-|* AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-|* LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-|* FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-|* DEALINGS IN THE SOFTWARE.
-|*
+|MLC Notebook v1|
 
-|*
-|* Sudoku solver in MLC.
-|*
+                          A Sudoku Solver in MLC
 
-|*
-|* A square in the grid can be in one of the following states:
-|*
-|* - Solved (exactly one possibility)
-|* - Underconstrained (more than one possibility)
-|* - Overconstrained (no possibilities)
-|*
-|* Sudoku puzzles use digits 1..9, but only as arbitrary distinguishable
-|* sigils--they don't participate in any arithmetic operations.  So we
-|* could replace them with letters, symbols, or Lucky Charms marshmallows
-|* to create isomorphic puzzles.
-|*
-|* In practice we replace the digits 1..N with the first N prime numbers.
-|* This allows us to store not only individual values, but superpositions
-|* of possible values (stored as the product of the possible primes) in
-|* one natural number per square.
-|* 
-|* The value 1 indicates the square is overconstrained i.e. unsolvable.
-|*
-|* An 'unconstrained' square has all possibilities, so its value is the
-|* product of all N primes.  This is initial state for non-clue squares.
-|*
+Copyright (c) 2009-2025 Michael P. Touloumtzis.
 
-first-prime := 2.
-last-prime := 23.
-first-nine-primes := [2 | 3 | 5 | 7 | 11 | 13 | 17 | 19 | 23].
-prime-to-digit-key :=
-	[ 0 | 0 | 1 | 2 | 0 | 3 | 0 | 4 | 0 | 0 | 0 | 5 |
-	  0 | 6 | 0 | 0 | 0 | 7 | 0 | 8 | 0 | 0 | 0 | 9 ].
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
 
-digit-to-prime := [d. at (d - 1, first-nine-primes)].
-prime-to-digit := [p. at (p, prime-to-digit-key)].
-unconstrained := first-nine-primes; cell-product.
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
 
-|* Build a square containing multiple digits; used for testing as when
-|* we build a real board, squares start single-valued or unconstrained.
-|*
-square-containing :=
-	let { pmult := [p, d. p * digit-to-prime (d)] }
-	[digits. gather (pmult, 1, digits)].
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR
+THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+|____________________________________________________________Section_______
+
+                       Solution Approach & Concepts
+
+We solve Sudoku via depth-first search (DFS) with constraint propagation.
+A proper Sudoku begins with constraints which admit exactly one solution.
+
+On the way to finding this solution we need to represent each square in
+the grid as being in one of the following states:
+
+- Underconstrained (more than one possibility)
+- Solved (exactly one possibility)
+- Overconstrained (no possibilities)
+
+A puzzle is solved when each of its squares is solved.
+
+When a square transitions form underconstrained to solved, we propagate
+that solution to all the square's peers (other squares in the same row,
+column, or box) by removing the solution from the possibilities of peer
+squares.  This may in turn solve one or more peer squares by leaving them
+with a single remaining possibility.  When this happens, we cascade the
+constraint propagation step, recursively, until all discovered solutions
+are reflected in all relevant peers.
+
+When starting on a puzzle our first step is to treat each clue as a
+newly discovered solution, propagating each as above.  In some cases
+this constraint propagation cascade will completely solve the puzzle
+without any need to initiate search.
+
+While searching, we guess a solution to an underconstrained square by
+selecting one of its possibilities and propagating that solution as above.
+Upon encountering an overconstrained square, we conclude that our guesses
+are faulty and we must backtrack to revise them.
+
+|________________________________Section #y9qEEMfF.3VvMRtww.Eb4LqHle_______
+|.......Require #tzNuz8Mh.ZK1TSbod.gw_zhkMK
+|.......Require #t29ihI7k.pn_OFpk4.8F3O9QPj
+|.......Public
+
+                          Square Representation
+
+Sudoku puzzles use digits 1..9, but only as arbitrary distinguishable
+sigils--they don't participate in any arithmetic operations.  So we
+could replace them with letters, symbols, or Lucky Charms marshmallows
+to create isomorphic puzzles.
+
+In practice we replace the digits 1..N with the first N prime numbers.
+This allows us to store not only individual values, but superpositions
+of possible values (stored as the product of the possible primes) in
+one natural number per square.
+ 
+The value 1 indicates the square is overconstrained i.e. unsolvable.
+
+An 'unconstrained' square has all possibilities, so its value is the
+product of all N leading primes.  This is the initial state for non-clue
+squares.
+
+To support this representation we start with some mapping functions:
+
+|:
+|:	first-prime := 2.
+|:	last-prime := 23.
+|:	first-nine-primes := [2 | 3 | 5 | 7 | 11 | 13 | 17 | 19 | 23].
+|:	prime-to-digit-key :=
+|:		[ 0 | 0 | 1 | 2 | 0 | 3 | 0 | 4 | 0 | 0 | 0 | 5 |
+|:		  0 | 6 | 0 | 0 | 0 | 7 | 0 | 8 | 0 | 0 | 0 | 9 ].
+|:
+|:	digit-to-prime := [d. at (d - 1, first-nine-primes)].
+|:	prime-to-digit := [p. at (p, prime-to-digit-key)].
+|:	unconstrained := first-nine-primes; cell-product.
+|:
+
+For testing, we may wish to construct a square containing multiple
+digits.  We don't need this for a real board, as all real squares start
+single-valued or unconstrained:
+
+|:
+|:	square-containing :=
+|:		let { pmult := [p, d. p * digit-to-prime (d)] }
+|:		[digits. gather (pmult, 1, digits)].
+|:
+
+|..........................................................................
 
 |*
 |* The fundamental solving operation is 'constraining' a square.
 |* Given a square's current value and a value, remove that value from
-|* the square's possible value.  There are 4 outcomes:
+|* the square's possible values.  There are 4 outcomes:
 |*
 |* (1) Square is unchanged; the given value was already impossible.
 |* (2) Square is still underconstrained, but with one fewer possibility.
@@ -201,7 +242,7 @@ grid-to-string := [grid.
 	#0 gather (xform, ["grid:" ++ hline | 0], digit-grid)].
 
 |* Ingesting puzzles.  For convenience, we start with digit puzzles using
-|* 0 as 'no hint'/unconstrained.  initial-grid converts these digit grids 
+|* 0 as 'no clue'/unconstrained.  initial-grid converts these digit grids 
 |* to prime grids, and initial-constraints generates the constraints
 |* arising from the clues.
 |*
@@ -238,7 +279,7 @@ initial-constraints := [grid. diff-grids (empty-grid, grid)].
 |* source-grid except constrained as specified.
 |*
 |* We expect each square in the constraint grids to be either a prime
-|* number (solved value) or 'unconstrained'.  Multiple constraints are
+|* number (solved value) or 1 for unconstrained.  Multiple constraints are
 |* applied not by products-of-primes but by multiple constraint grids.
 |*
 constrained-grid := [source-grid, constraint-grids.
@@ -299,7 +340,7 @@ guess-grid := [i, n, grid.
 |* doesn't yield a solution, we find the most-constrained square and
 |* guess each possible value for it.  We propagate the constraint
 |* resulting from the guess, then recursively apply the same procedure
-|* to the resulting grid.  When we encounter an impossibity, backtrack
+|* to the resulting grid.  When we encounter an impossibility, backtrack
 |* and apply another guess possibility.
 |*
 constrain-and-guess := [constrain-and-guess! grid0, constraints0.
@@ -323,6 +364,9 @@ constrain-and-guess := [constrain-and-guess! grid0, constraints0.
 				do-guess (analysis, grid)]]] }
 
 	do-analyze (constrain (grid0, constraints0))].
+
+|________________________________Section #YCVDw_AO.6HLOPjtd.y38Zzrkd_______
+|.......Public
 
 |* Use constrain-and-guess to apply the full solution procedure.
 |*
@@ -363,6 +407,19 @@ blank-grid :=
 	| 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 ].
 
 easy-grid :=
+	[ 0 | 0 | 3 | 0 | 2 | 0 | 6 | 0 | 0
+	| 9 | 0 | 0 | 3 | 0 | 5 | 0 | 0 | 1
+	| 0 | 0 | 1 | 8 | 0 | 6 | 4 | 0 | 0
+
+	| 0 | 0 | 8 | 1 | 0 | 2 | 9 | 0 | 0
+	| 7 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 8
+	| 0 | 0 | 6 | 7 | 0 | 8 | 2 | 0 | 0
+
+	| 0 | 0 | 2 | 6 | 0 | 9 | 5 | 0 | 0
+	| 8 | 0 | 0 | 2 | 0 | 3 | 0 | 0 | 9
+	| 0 | 0 | 5 | 0 | 1 | 0 | 3 | 0 | 0 ].
+
+euler96-grid :=
 	[ 0 | 0 | 3 | 0 | 2 | 0 | 6 | 0 | 0
 	| 9 | 0 | 0 | 3 | 0 | 5 | 0 | 0 | 1
 	| 0 | 0 | 1 | 8 | 0 | 6 | 4 | 0 | 0
@@ -465,3 +522,16 @@ reddit-hard-grid :=
 	| 0 | 1 | 0 | 0 | 0 | 0 | 4 | 0 | 0
 	| 0 | 0 | 4 | 0 | 0 | 9 | 0 | 0 | 6
 	| 8 | 0 | 3 | 0 | 0 | 6 | 0 | 0 | 0 ].
+
+stuck-again-grid :=
+	[ 0 | 0 | 0 | 5 | 0 | 0 | 0 | 0 | 0
+	| 0 | 8 | 5 | 0 | 1 | 6 | 0 | 0 | 2
+	| 0 | 0 | 7 | 0 | 0 | 8 | 0 | 0 | 0
+
+	| 0 | 5 | 0 | 0 | 9 | 0 | 0 | 0 | 7
+	| 0 | 0 | 1 | 0 | 0 | 2 | 9 | 0 | 0
+	| 0 | 0 | 4 | 0 | 7 | 0 | 0 | 5 | 0
+
+	| 2 | 3 | 0 | 0 | 0 | 0 | 6 | 0 | 0
+	| 0 | 0 | 0 | 0 | 0 | 0 | 0 | 9 | 0
+	| 4 | 0 | 0 | 2 | 0 | 0 | 0 | 0 | 3 ].

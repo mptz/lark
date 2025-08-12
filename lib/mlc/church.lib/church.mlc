@@ -1,12 +1,19 @@
-|* Basic operations on Church numerals and other pure Lambda-calculus
-|* representations.  Even though MLC supports a variety of primitive
-|* functionality, these representations and operations remain useful
-|* in testing evaluation.
+|MLC Notebook v1|
 
-|* Basic concepts; not all useful but here for tradition.
+Basic operations on Church numerals and other pure Lambda-calculus
+representations.  Even though MLC supports a variety of primitive
+functionality, these representations and operations remain useful in
+testing evaluation.
+
+For now it's one big section...
+
+|________________________________Section #VLWBCVQ5.kSBalCkf.5Ir-lvSl_______
+|.......Public
+
+|..........................................................................
+
+|* Identity function
 id	:= [x. x].
-bottom	:= [w. w; w] [w. w; w].
-explode := [w. w; w; w] [w. w; w; w].
 
 |* Boolean logic operations
 true	:= [x. [_. x]].

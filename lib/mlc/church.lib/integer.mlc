@@ -1,20 +1,40 @@
-|* Basic operations on integers
-|* The sign function 's' represents the sign bit
-|* The sign function is only applied to negative numbers
-z0	:= [_. zero].
-z1	:= [_. one].
-z-1	:= [s. [f. [x. x; f; s]]].
+|MLC Notebook v1|
 
-|* Conversion between N and Z
-|* z2n returns the natural number which is the input's absolute value.
-|* abs is the absolute value in type Z -> Z.
-|* n2zinv given n returns the negative integer -n.
-|* absinv is the negative absolute value in type Z -> Z.
-n2z	:= [n. [_. n]].
-n2zinv	:= [n. [s. [f. [x. s (n (f) (x))]]]].
-z2n	:= [i. id; i].
-abs	:= [i. i; z2n; n2z].
-absinv	:= [i. i; z2n; n2zinv].
+Integers and Integer Arithmetic.
+
+|.......Require #VLWBCVQ5.kSBalCkf.5Ir-lvSl
+|.......Require #yPZE8iYU.OB5wLg1y.4qPVHyV1
+
+|________________________________Section #P_1qZIxy.lb4GjQ8H.78bYJEfd_______
+|.......Public
+
+The integer representation extends the basic Church numerals with a sign
+function 's' which represents the sign bit.  The sign functdion is only
+applied to negative numbers.
+
+|:
+|:	z0	:= [_. zero].
+|:	z1	:= [_. one].
+|:	z-1	:= [s. [f. [x. x; f; s]]].
+|:
+
+Conversion between N and Z, various flavors:
+* n2z converts a natural number to a (nonnegative) integer by wrapping
+  with an ignored sign function.
+* n2zinv given natural n returns the negative integer -n.
+* z2n returns the natural number which is the input's absolute value.
+* abs is the absolute value in type Z -> Z.
+* absinv is the negative absolute value in type Z -> Z.
+
+|:
+|:	n2z	:= [n. [_. n]].
+|:	n2zinv	:= [n. [s. [f. [x. s (n (f) (x))]]]].
+|:	z2n	:= [i. id; i].
+|:	abs	:= [i. i; z2n; n2z].
+|:	absinv	:= [i. i; z2n; n2zinv].
+|:
+
+|..........................................................................
 
 |* Three-way branch yielding p, z, or n depending on whether i is positive,
 |* zero, or negative, respectively.  branch is just a different arg order.
