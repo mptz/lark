@@ -28,15 +28,19 @@ struct form;
 
 enum stmt_variety {
 	STMT_INVALID,
-	STMT_CONCEAL,
 	STMT_DEF,
 	STMT_ECHO,
-	STMT_INSPECT,
-	STMT_PUBLIC,
-	STMT_REQUIRE,
-	STMT_REVEAL,
-	STMT_SECTION,
+	STMT_MARKER,
 	STMT_VAL,
+} __attribute__ ((packed));
+
+enum marker_variety {
+	MARKER_DISCARD,
+	MARKER_INSPECT,
+	MARKER_PUBLISH,
+	MARKER_REQUIRE,
+	MARKER_RETRACT,
+	MARKER_SECTION,
 } __attribute__ ((packed));
 
 struct stmt {
@@ -45,22 +49,30 @@ struct stmt {
 	union {
 		struct { struct form *var, *val; unsigned flags; } def;
 		struct { struct form	   *val; unsigned flags; } val;
+		struct { enum marker_variety variety; symbol_mt huid; } marker;
 		struct form *form;
-		symbol_mt sym;
 	};
 };
 
-extern struct stmt *StmtConceal(symbol_mt id);
 extern struct stmt *StmtDef(struct form *var, struct form *val, unsigned flags);
 extern struct stmt *StmtEcho(struct form *str);
-extern struct stmt *StmtInspect(symbol_mt id);
-extern struct stmt *StmtPublic(void);
-extern struct stmt *StmtRequire(symbol_mt id);
-extern struct stmt *StmtReveal(symbol_mt id);
-extern struct stmt *StmtSection(symbol_mt id);
+extern struct stmt *StmtMarker(enum marker_variety variety, symbol_mt huid);
 extern struct stmt *StmtVal(struct form *val, unsigned flags);
 
+static inline struct stmt *StmtDiscard(symbol_mt huid)
+	{ return StmtMarker(MARKER_DISCARD, huid); }
+static inline struct stmt *StmtInspect(symbol_mt huid)
+	{ return StmtMarker(MARKER_INSPECT, huid); }
+static inline struct stmt *StmtPublish(symbol_mt huid)
+	{ return StmtMarker(MARKER_PUBLISH, huid); }
+static inline struct stmt *StmtRequire(symbol_mt huid)
+	{ return StmtMarker(MARKER_REQUIRE, huid); }
+static inline struct stmt *StmtRetract(symbol_mt huid)
+	{ return StmtMarker(MARKER_RETRACT, huid); }
+static inline struct stmt *StmtSection(symbol_mt huid)
+	{ return StmtMarker(MARKER_SECTION, huid); }
+
 extern void stmt_free(struct stmt *stmt);
-extern void stmt_eval(const struct stmt *stmt);
+extern int stmt_eval(const struct stmt *stmt);
 
 #endif /* LARK_MLC_STMT_H */

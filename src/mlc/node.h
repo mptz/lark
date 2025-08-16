@@ -29,6 +29,7 @@
 
 #define SLOT_ABS_BODY 0
 #define SLOT_APP_FUNC 0
+#define SLOT_BINDER_BODY 0
 #define SLOT_TEST_PRED 0
 #define SLOT_TEST_CSQ 1
 #define SLOT_TEST_ALT 2
@@ -144,6 +145,8 @@ static inline struct node *node_abs_body(const struct node *abs)
 	{ return abs->slots[SLOT_ABS_BODY].subst; }
 static inline size_t node_app_nargs(const struct node *app)
 	{ return app->nslots - 1; }
+static inline struct node *node_binder_body(const struct node *node)
+	{ return node->slots[SLOT_BINDER_BODY].subst; }
 static inline bool done(const struct node *node)
 	{ return node->variety == NODE_SENTINEL; }
 static inline void node_pinch(struct node *node)
@@ -170,13 +173,13 @@ extern struct node *NodeSubst(struct node *prev, int depth, struct node *subst);
 extern struct node *NodeSymbol(struct node *prev, int depth, symbol_mt sym);
 extern struct node *NodeTest(struct node *prev, int depth);
 
-extern int node_abs_depth(const struct node *node);
 extern const struct node *node_chase_lhs(const struct node *node);
 extern void node_deref(struct node *node);
 extern void node_free(struct node *node);
 extern void node_insert_after(struct node *node, struct node *dest);
 extern void node_recycle(struct node *node);
 extern void node_replace(struct node *node, struct node *dest);
+extern int node_subst_depth(const struct node *node);
 extern struct node *node_take_body(struct node *abs);
 extern void node_wipe_body(struct node *abs);
 

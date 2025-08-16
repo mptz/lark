@@ -59,10 +59,8 @@ static inline struct stmt *locs(struct stmt *stmt, struct YYLTYPE *locp)
 %locations
 %parse-param {struct sourcefile *sourcefile}
 
-%token CMD_ECHO
 %token DEF
-%token ENV_DUMP
-%token PUBLIC
+%token ENV_DUMP SYMTAB_DUMP
 
 %nonassoc OP2C			/* binary comparison operators */
 %left OP2A			/* binary additive operators */
@@ -70,12 +68,17 @@ static inline struct stmt *locs(struct stmt *stmt, struct YYLTYPE *locp)
 %precedence OP1			/* unary operators */
 %type <prim> OP2C OP2A OP2M OP1
 
-%token <sym> HUID INSPECT REQUIRE SECTION
-%token <sym> CONCEAL REVEAL
+/*
+ * Tokens for namespace management.  These don't need to be treated
+ * as keywords which can be used as variable names, since the lexer
+ * only recognizes them using more complex regular expressions.
+ */
+%token <sym> HUID DISCARD INSPECT PUBLISH REQUIRE RETRACT SECTION
+
 %token <prim> PRIM
 %token <form> NUM STRING SYMBOL VARIABLE
 
-%token <form> KW_DEEP KW_DEF KW_LET KW_LIFTING KW_LITERAL
+%token <form> KW_DEEP KW_DEF KW_ECHO KW_LET KW_LIFTING KW_LITERAL
 %token <form> KW_OPAQUE KW_SURFACE KW_VAL
 
 %type <u> bflag bflags vflag
@@ -102,22 +105,15 @@ stmts	: '.'
 stmt	: term 
 		{ sourcefile_add(sourcefile,
 			locs(StmtVal($1, BINDING_DEEP), &@$)); }
-	| CMD_ECHO STRING
-		{ sourcefile_add(sourcefile, locs(StmtEcho($2), &@$)); }
-	| CONCEAL var
-		{ sourcefile_add(sourcefile,
-				 locs(StmtConceal($2->var.name), &@$));
-		  form_free($2); }
 	| KW_DEF '{' bflags '}' var DEF term
 		{ sourcefile_add(sourcefile, locs(StmtDef($5, $7, $3), &@$)); }
 	| KW_DEF '{' bflags ',' '}' var DEF term
 		{ sourcefile_add(sourcefile, locs(StmtDef($6, $8, $3), &@$)); }
-	| REVEAL var
-		{ sourcefile_add(sourcefile,
-				 locs(StmtReveal($2->var.name), &@$));
-		  form_free($2); }
+	| KW_ECHO STRING
+		{ sourcefile_add(sourcefile, locs(StmtEcho($2), &@$)); }
 	| ENV_DUMP		{ env_dump(NULL); }
 	| ENV_DUMP STRING	{ env_dump($2->str); }
+	| SYMTAB_DUMP		{ symtab_dump(); }
 	| var DEF term
 		{ sourcefile_add(sourcefile, locs(StmtDef($1, $3, 0), &@$)); }
 	| KW_VAL '{' vflag '}' term
@@ -144,14 +140,12 @@ vflag	: %empty		{ $$ = BINDING_DEEP; }
 	| KW_SURFACE		{ $$ = 0; }
 	;
 
-marker	: INSPECT
-		{ sourcefile_add(sourcefile, locs(StmtInspect($1), &@$)); }
-	| PUBLIC
-		{ sourcefile_add(sourcefile, locs(StmtPublic(), &@$)); }
-	| REQUIRE
-		{ sourcefile_add(sourcefile, locs(StmtRequire($1), &@$)); }
-	| SECTION
-		{ sourcefile_add(sourcefile, locs(StmtSection($1), &@$)); }
+marker	: DISCARD { sourcefile_add(sourcefile, locs(StmtDiscard($1), &@$)); }
+	| INSPECT { sourcefile_add(sourcefile, locs(StmtInspect($1), &@$)); }
+	| PUBLISH { sourcefile_add(sourcefile, locs(StmtPublish($1), &@$)); }
+	| REQUIRE { sourcefile_add(sourcefile, locs(StmtRequire($1), &@$)); }
+	| RETRACT { sourcefile_add(sourcefile, locs(StmtRetract($1), &@$)); }
+	| SECTION { sourcefile_add(sourcefile, locs(StmtSection($1), &@$)); }
 	;
 
 /*
@@ -233,7 +227,7 @@ base	: NUM | SYMBOL | string | prim | var | pack;
 string	: STRING | string STRING	{ $$ = FormStringConcat($1, $2); };
 prim	: PRIM			{ $$ = FormPrim($1, &@1); };
 var	: VARIABLE | keyword | blank;
-keyword	: KW_DEEP | KW_DEF | KW_LET | KW_LIFTING | KW_LITERAL
+keyword	: KW_DEEP | KW_DEF | KW_ECHO | KW_LET | KW_LIFTING | KW_LITERAL
 	| KW_OPAQUE | KW_SURFACE | KW_VAL;
 blank	: '_'			{ $$ = FormVar(the_placeholder_symbol); };
 

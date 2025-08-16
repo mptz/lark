@@ -37,16 +37,17 @@
 #define ENV_SIZE_HINT 1000
 #define NS_SIZE_HINT 100
 
-static struct wordbuf global_env_by_index;
-static struct wordtab global_env_by_name;
-static struct wordtab global_env_spaces_all, global_env_spaces_public;
+static struct wordbuf	global_env_by_index;
+static struct wordtab	global_env_by_name,
+			global_env_spaces,
+			global_env_published;
 
 void env_init(void)
 {
 	wordbuf_init(&global_env_by_index);
 	wordtab_init(&global_env_by_name, ENV_SIZE_HINT);
-	wordtab_init(&global_env_spaces_all, NS_SIZE_HINT);
-	wordtab_init(&global_env_spaces_public, NS_SIZE_HINT);
+	wordtab_init(&global_env_spaces, NS_SIZE_HINT);
+	wordtab_init(&global_env_published, NS_SIZE_HINT);
 
 	/*
 	 * To reserve 0 for use as an out-of-band environment index,
@@ -93,6 +94,9 @@ static struct binder *env_put(symbol_mt name, symbol_mt space,
 			      struct term *term, struct node *val,
 			      unsigned flags, struct wordbuf *slot)
 {
+	assert(name != the_empty_symbol);
+	assert(space != the_empty_symbol);
+
 	if (term) {
 		assert(flags & BINDING_LIFTING);
 		assert(!val);
@@ -191,32 +195,6 @@ struct binder *env_lookup(symbol_mt name, const struct wordtab *spaces)
 	return binder;
 }
 
-void env_get_public(struct wordtab *spaces)
-{
-	struct wordtab_iter iter;
-	wordtab_iter_init(&global_env_spaces_public, &iter);
-	struct wordtab_entry *entry;
-	while ((entry = wordtab_iter_next(&iter)))
-		wordtab_set(spaces, entry->key);
-}
-
-bool env_is_public(symbol_mt space)
-{
-	return wordtab_test(&global_env_spaces_public, space);
-}
-
-void env_public(symbol_mt space)
-{
-	wordtab_set(&global_env_spaces_public, space);
-}
-
-int env_new_space(symbol_mt space)
-{
-	if (wordtab_test(&global_env_spaces_all, space)) return -1;
-	wordtab_set(&global_env_spaces_all, space);
-	return 0;
-}
-
 /*
  * env_test is currently used to see if we need to freshen local vars
  * to avoid conflict with global names (which is more about confusion
@@ -226,4 +204,46 @@ int env_new_space(symbol_mt space)
 bool env_test(symbol_mt name)
 {
 	return !!wordtab_get(&global_env_by_name, name);
+}
+
+/*
+ * Namespace- and library-related functionality.
+ */
+
+int env_begin(symbol_mt space, symbol_mt library)
+{
+	symbol_mt prior = (word) wordtab_get(&global_env_spaces, space);
+	if (prior) {
+		errf("Section #%s already exists in '%s', "
+		     "can't begin in '%s'\n", symtab_lookup(space),
+		     symtab_lookup(prior), symtab_lookup(library));
+		return -1;
+	}
+	wordtab_put(&global_env_spaces, space, (void*) (word) library);
+	return 0;
+}
+
+void env_publish(symbol_mt space, symbol_mt published)
+{
+	struct wordbuf *slot = wordtab_get(&global_env_published, space);
+	if (!slot) {
+		slot = xmalloc(sizeof *slot);
+		wordbuf_init(slot);
+		wordtab_put(&global_env_published, space, slot);
+	}
+	wordbuf_push(slot, (word) published);
+}
+
+void env_published(symbol_mt space, struct wordbuf *buf)
+{
+	struct wordbuf *slot = wordtab_get(&global_env_published, space);
+	for (size_t i = 0, n = slot ? wordbuf_used(slot) : 0;
+	     i < n;
+	     wordbuf_push(buf, wordbuf_at(slot, i++)));
+}
+
+symbol_mt env_whose(symbol_mt space)
+{
+	symbol_mt library = (word) wordtab_get(&global_env_spaces, space);
+	return library ? : the_empty_symbol;
 }

@@ -20,8 +20,6 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
-#include <util/huid.h>
-#include <util/huidrand.h>
 #include <util/memutil.h>
 #include <util/message.h>
 
@@ -29,30 +27,19 @@
 #include "sourcefile.h"
 #include "stmt.h"
 
-/*
- * Sourcefiles begin with anonymous (random) namespaces, and new such
- * namespaces are created by unnumbered 'Section' directives.  These
- * namespaces are used to prevent name collisions when extending the
- * global environment, but can't be referenced in 'Requires' statements
- * since their identities are not known.
- */
-static void sourcefile_begin_random_namespace(struct sourcefile *sf)
+void sourcefile_init(struct sourcefile *sf, symbol_mt library,
+		     symbol_mt filename)
 {
-	char huid [HUID_STR];
-	huid_fresh_str(huid, sizeof huid);
-	sf->namespace = symtab_intern(huid);
-	sf->section = sf->requirement = the_empty_symbol;
-	sf->line = -1;
-}
+	assert(library != the_empty_symbol);
 
-void sourcefile_init(struct sourcefile *sf, const char *filename)
-{
+	circlist_init(&sf->entry);
 	wordbuf_init(&sf->contents);
+	wordbuf_init(&sf->locals);
 	wordtab_init(&sf->namespaces, 10 /* size hint */);
-	sf->filename = xstrdup(filename);
-	sf->pos = 0;
-	sf->public = false;
-	sourcefile_begin(sf, the_empty_symbol);
+	sf->library = library;
+	sf->filename = filename;
+	sf->namespace = sf->requirement = the_empty_symbol;
+	sf->pos = sf->bound = 0;
 }
 
 void sourcefile_fini(struct sourcefile *sf)
@@ -60,8 +47,8 @@ void sourcefile_fini(struct sourcefile *sf)
 	for (size_t i = wordbuf_used(&sf->contents); i--; /* nada */)
 		stmt_free((struct stmt *) wordbuf_at(&sf->contents, i));
 	wordbuf_fini(&sf->contents);
+	wordbuf_fini(&sf->locals);
 	wordtab_fini(&sf->namespaces);
-	xfree(sf->filename);
 }
 
 /*
@@ -78,19 +65,13 @@ void sourcefile_add(struct sourcefile *sf, struct stmt *stmt)
  * Beginning a section doesn't make it available--that happens at the
  * end of a section once its definitions have beed added to the global
  * environment.  Beginning a section just updates the current namespace
- * as well as current section if numbered/named.
+ * and section.
  */
 int sourcefile_begin(struct sourcefile *sf, symbol_mt section)
 {
-	if (section == the_empty_symbol)
-		sourcefile_begin_random_namespace(sf);
-	else
-		sf->namespace = sf->section = section;
-	if (env_new_space(sf->namespace)) {
-		errf("Section already exists: #%s\n",
-		     symtab_lookup(sf->namespace));
-		return -1;
-	}
+	assert(section != the_empty_symbol);
+	if (env_begin(section, sf->library)) return -1;
+	sf->namespace = section;
 	wordtab_set(&sf->namespaces, sf->namespace);
 	return 0;
 }

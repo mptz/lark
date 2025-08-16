@@ -38,6 +38,7 @@
 #include "env.h"
 #include "form.h"
 #include "library.h"
+#include "repl.h"
 #include "sourcefile.h"
 #include "stmt.h"
 
@@ -47,251 +48,96 @@
 /*
  * Library-level data, unlike per-file data, is currently stored in
  * global static data structures since we don't interleave library
- * reading--there is only every one library being processed at once.
+ * reading--there is only ever one library being processed at once.
  */
 static struct circlist resolve_queue, require_queue, complete_queue;
 static struct wordtab sections_available;
-static const char *libpath, *libname;
 struct sourcefile *the_current_sourcefile;
+static int library_initialized;
 
-static int library_filter(const struct dirent *dirent)
+void library_init(void)
 {
-	return !fnmatch("*.mlc", dirent->d_name, FNM_PERIOD);
-}
-
-/*
- * We don't duplicate the library name since the lifetime of library
- * information is scoped entirely within library_load().
- */
-static void library_init(const char *name)
-{
+	assert(!library_initialized);
 	circlist_init(&resolve_queue);
 	circlist_init(&require_queue);
 	circlist_init(&complete_queue);
 	wordtab_init(&sections_available, 50 /* size hint */);
-	libname = name;
+	library_initialized = 1;
 }
 
 static void free_queue(struct circlist *queue)
 {
-	struct sourcefile *sf;
-	while ((sf = node_of(struct sourcefile, circlist_remove_head(queue))))
-		sourcefile_fini(sf), xfree(sf);
+	for (struct sourcefile *sf;
+	     (sf = node_of(struct sourcefile, circlist_remove_head(queue)));
+	     sourcefile_fini(sf), xfree(sf));
 }
 
-static void library_fini(void)
+void library_fini(void)
 {
+	assert(library_initialized);
 	free_queue(&resolve_queue);
 	free_queue(&require_queue);
 	free_queue(&complete_queue);
 	wordtab_fini(&sections_available);
-	xfree(libpath), libpath = NULL;
+	library_initialized = 0;
 }
 
 /*
- * Find a library by its name, checking all paths in the colon-separated
- * MLCLIB environment variable.  Return an open file descriptor of the
- * library's directory, or -1 on error.
- */
-static int library_find(void)
-{
-	char *envpaths = getenv("MLCLIB") ? : "/usr/lib/mlc",
-	     *pathbuf = xmalloc(strlen(envpaths) + 1),
-	     *allpaths = pathbuf;
-	int dirfd = -1, libfd = -1;
-
-	strcpy(pathbuf, envpaths);
-	const char *curpath;
-	while ((curpath = strsep(&allpaths, ":")) && libfd < 0) {
-		/*
-		 * Silently ignore empty paths e.g. "lib/one::/lib/two"
-		 * which may legitimately arise from path concatenenation.
-		 */
-		if (!strlen(curpath))
-			continue;
-
-		dirfd = open(curpath, O_DIRECTORY | O_PATH);
-		/*
-		 * If a directory in the library paths list doesn't
-		 * exist, silently ignore it.  Otherwise we error.
-		 */
-		if (dirfd < 0 && errno == ENOENT)
-			goto try_next_path;
-		if (dirfd < 0) {
-			fprintf(stderr, "Directory '%s' from library path "
-				"('%s'): %s\n", curpath, envpaths,
-				strerror(errno));
-			goto library_find_fatal;
-		}
-
-		/*
-		 * Try opening the library relative to the library path.
-		 * Again, if not found we silently continue.  If libname
-		 * is an absolute (vs relative) path, openat ignores dirfd
-		 * so the library, if it exists, will be found no matter
-		 * from which library directory we first inspect.
-		 */ 
-		libfd = openat(dirfd, libname, O_DIRECTORY | O_PATH);
-		if (libfd < 0 && errno == ENOENT)
-			goto try_next_path;
-		if (libfd < 0) {
-			fprintf(stderr, "%s/%s: %s\n", curpath, libname,
-				strerror(errno));
-			goto library_find_fatal;
-		}
-		if (libfd >= 0) libpath = xstrdup(curpath);
-
-	try_next_path:
-		if (dirfd >= 0) close(dirfd), dirfd = -1;
-	}
-
-	/*
-	 * If we exited the loop normally without successfully opening
-	 * a library directory, it's because we never found the named
-	 * library in any of the configured library paths.
-	 */
-	if (libfd < 0)
-		fprintf(stderr, "Library '%s' not found in library paths: "
-				"'%s'\n", libname, envpaths);
-
-library_find_fatal:
-	if (dirfd >= 0) close(dirfd);
-	xfree(pathbuf);
-	return libfd;
-}
-
-static int library_read_stream(const char *filename, FILE *input)
-{
-	/*
-	 * Sourcefiles are added to a queue immediately after creation
-	 * so are automatically freed (eventually).
-	 */
-	struct sourcefile *sf = xmalloc(sizeof *sf);
-	sourcefile_init(sf, filename);
-	circlist_add_tail(&resolve_queue, &sf->entry);
-
-	struct scanner_state scanner;
-	mlc_yypstate *parser;
-
-	mlc_scan_init_input(&scanner, input);
-	parser = mlc_yypstate_new();
-	assert(parser);
-
-	int status;
-	do {
-		YYSTYPE val;
-		YYLTYPE loc;
-		int token = mlc_yylex(&val, &loc, scanner.flexstate);
-		status = mlc_yypush_parse(parser, token, &val, &loc, sf);
-	} while (status == YYPUSH_MORE);
-	if (status) errf("Abandoning parse of %s\n", sf->filename);
-	sf->bound = wordbuf_used(&sf->contents);
-
-	mlc_yypstate_delete(parser);
-	mlc_scan_fini(&scanner);
-	return status;
-}
-
-static int library_read_file(const char *pathname)
-{
-	/* XXX doesn't handle "-" as an input filename convention */
-	FILE *input = fopen(pathname, "r");
-	if (!input) {
-		perr(pathname);
-		return -1;
-	}
-	int status = library_read_stream(pathname, input);
-	if (input != stdin) fclose(input);
-	return status;
-}
-
-static int library_read(int libfd)
-{
-	struct dirent **namelist = NULL;
-	FILE *input = NULL;
-	int retval = -1;
-
-	/*
-	 * Scan the library directory looking for *.mlc source files.
-	 */
-	int nentries = scandirat(libfd, ".", &namelist,
-				 library_filter, asciisort);
-	if (nentries < 0) {
-		perrf("%s/%s", libpath, libname);
-		return -1;
-	}
-
-	/*
-	 * Open and parse each source file.
-	 */
-	int i;
-	for (i = 0; i < nentries; ++i) {
-		const char *filename = namelist[i]->d_name;
-		int srcfd = openat(libfd, filename, O_RDONLY);
-		if (srcfd < 0) {
-			perrf("%s/%s/%s", libpath, libname, filename);
-			goto library_read_fatal;
-		}
-		input = fdopen(srcfd, "r");
-		assert(input);
-		int status = library_read_stream(filename, input);
-		if (input != stdin) fclose(input);
-		input = NULL;
-		if (status) goto library_read_fatal;
-	}
-	retval = 0;	/* success! */
-
-library_read_fatal:
-	if (input) fclose(input);
-	xfree(namelist);
-	return retval;
-}
-
-/*
- * Complete a named section if one is open.  This may unblock other files
- * which require the section we've just completed.  For each file in the
- * require queue whose requirement is this section, move it to the resolve
- * queue (i.e. unblock it).
+ * Complete a section.  This may unblock other files which require the
+ * section we've just completed.  For each file in the require queue whose
+ * requirement is this section, move it to the resolve queue (i.e. unblock
+ * it).
  */
 static void complete_section(struct sourcefile *sf)
 {
-	if (sf->section == the_empty_symbol)
+	/*
+	 * This will be the case if we're at the beginning of the file
+	 * and haven't started a section yet.  Also don't complete the
+	 * section in the REPL since we keep re-using the sourcefile
+	 * with a single section/namespace.
+	 */
+	if (sf->namespace == the_empty_symbol || sf->library == repl_lib_id)
 		return;
 
-	wordtab_set(&sections_available, sf->section);
-	if (sf->public) env_public(sf->section), sf->public = false;
+	wordtab_set(&sections_available, sf->namespace);
 	struct circlist *curr = require_queue.next;
 	while (curr != &require_queue) {
 		struct sourcefile *waiter = node_of(struct sourcefile, curr);
 		curr = curr->next;
-		if (waiter->requirement == sf->section) {
+		if (waiter->requirement == sf->namespace) {
 			waiter->requirement = the_empty_symbol;
 			circlist_remove(&waiter->entry);
 			circlist_add_tail(&resolve_queue, &waiter->entry);
 		}
 	}
-	sf->section = the_empty_symbol;
+	sf->namespace = the_empty_symbol;
 }
 
-/*
- * Require a section.  If the section is already available, just proceed.
- * Sections may be public (in the global environment) or may already be
- * available from the current library.
- *
- * Otherwise add the sourcefile to the require queue, blocking it until
- * the required section becomes available.  The given sourcefile should
- * not already be on a queue.
- *
- * Either way, it's safe to add the section to the sourcefile's active
- * namespaces since resolution won't proceed until it's available.
- *
- * Return 0 on success (no need to block) and 1 when blocked.
- */
-static int require_section(struct sourcefile *sf, symbol_mt section, int line)
+static int publish_section(struct sourcefile *sf, symbol_mt section, int line)
 {
-	wordtab_set(&sf->namespaces, section);
-	if (env_is_public(section) ||
-	    wordtab_test(&sections_available, section))
+	if (sf->namespace == the_empty_symbol) {
+		errf("[#%s]:%s:%d: No namespace yet, can't publish #%s\n",
+		     symtab_lookup(sf->library), symtab_lookup(sf->filename),
+		     line, symtab_lookup(section));
+		return -1;
+	}
+
+	/*
+	 * We can only publish sections from our own library, or which
+	 * become available as a result of being published by another
+	 * library.  If we try to publish a section which never becomes
+	 * available, we'll never unblock and library loading will fail.
+	 * This ensures that library sections can't be published against
+	 * the will of the library's author.
+	 *
+	 * It may seem that publishing via env_publish() before checking
+	 * availability is premature, but publishing only takes effect
+	 * for completed sections, and if we block forever the current
+	 * section will never be completed.
+	 */
+	assert(section != the_empty_symbol);
+	env_publish(sf->namespace, section);
+	if (wordtab_test(&sections_available, section))
 		return 0;
 	sf->requirement = section;
 	sf->line = line;
@@ -299,7 +145,122 @@ static int require_section(struct sourcefile *sf, symbol_mt section, int line)
 	return 1;
 }
 
-static int library_resolve(void)
+/*
+ * Requiring an external (other-library) section adds all namespaces
+ * that section *publishes* rather than the namespace of the section
+ * itself.  This gives libraries control over their exports.
+ *
+ * Add each namespace we're bringing into scope to the current
+ * sourcefile's namespaces.  If the namespace was not already in scope
+ * and this is a local requirement (not at top of file), add it to the
+ * current sourcefile's local requirements so we can clear it upon
+ * ending the current section.
+ */
+static void require_external(struct sourcefile *sf, symbol_mt section, int line)
+{
+	struct wordbuf published;
+	wordbuf_init(&published);
+	env_published(section, &published);
+	size_t b = wordbuf_used(&published);
+	if (!b)
+		warnf("[#%s]:%s:%d: Required external section #%s "
+			"publishes nothing\n", symtab_lookup(sf->library),
+			symtab_lookup(sf->filename), line,
+			symtab_lookup(section));
+	for (size_t i = 0; i < b; ++i) {
+		symbol_mt id = wordbuf_at(&published, i);
+		if (wordtab_test(&sf->namespaces, id)) continue;
+		wordtab_set(&sf->namespaces, id);
+		if (sf->namespace != the_empty_symbol)
+			wordbuf_push(&sf->locals, id);
+	}
+	wordbuf_fini(&published);
+}
+
+/*
+ * Require a section.  Behavior hinges on whether the section is from
+ * another library (external) or from this one.  Library processing is
+ * serialized, so external sections are fully complete; if a section
+ * doesn't exist yet it must be from elsewhere in *this* library.  In
+ * that case we return 1 to indicate we need to block.  Even when we
+ * block, we add the section to this sourcefile's active namepaces
+ * first--this is safe since resolution of this sourcefile won't
+ * proceed until it's available.
+ *
+ * Return 0 on success (no need to block) and 1 when blocked.
+ */
+static int require_section(struct sourcefile *sf, symbol_mt section, int line)
+{
+	/*
+	 * If the section is external (from another library) requiring
+	 * it can't fail and can't block... finish that here.
+	 */
+	symbol_mt whose = env_whose(section);
+	if (whose != the_empty_symbol && whose != sf->library) {
+		require_external(sf, section, line);
+		return 0;
+	}
+
+	/*
+	 * Set the namespace; if not already set and if this is a local
+	 * requirement (associated with a section rather than at top of
+	 * file) add it to our list of locals so we can clear it at end
+	 * of section.
+	 */
+	if (!wordtab_test(&sf->namespaces, section)) {
+		wordtab_set(&sf->namespaces, section);
+		if (sf->namespace != the_empty_symbol)
+			wordbuf_push(&sf->locals, section);
+	}
+
+	if (wordtab_test(&sections_available, section))
+		return 0;
+	sf->requirement = section;
+	sf->line = line;
+	circlist_add_head(&require_queue, &sf->entry);
+	return 1;
+}
+
+void library_queue(struct sourcefile *sf)
+{
+	assert(sf->requirement == the_empty_symbol);
+	circlist_add_tail(&resolve_queue, &sf->entry);
+}
+
+struct sourcefile *library_recycle(void)
+{
+	assert(circlist_is_inhabited(&complete_queue));
+	struct sourcefile *sf = node_of(struct sourcefile,
+					circlist_remove_head(&complete_queue));
+	assert(circlist_is_empty(&complete_queue));
+	return sf;
+}
+
+static int handle_marker(struct sourcefile *sf, const struct stmt *stmt)
+{
+	assert(stmt->variety == STMT_MARKER);
+	const enum marker_variety variety = stmt->marker.variety;
+	const symbol_mt huid = stmt->marker.huid;
+
+	switch (variety) {
+	case MARKER_INSPECT:
+		wordtab_set(&sf->namespaces, huid);
+		break;
+	case MARKER_PUBLISH:
+		return publish_section(sf, huid, stmt->line0);
+	case MARKER_REQUIRE:
+		return require_section(sf, huid, stmt->line0);
+	case MARKER_SECTION:
+		complete_section(sf);
+		if (sourcefile_begin(sf, huid))
+			return -1;
+		break;
+	default: panicf("Unimplemented marker variety %d\n", variety);
+	}
+	return 0;
+}
+
+int library_resolve(void)
 {
 	struct sourcefile *sf;
 
@@ -311,36 +272,23 @@ static int library_resolve(void)
 			struct stmt *stmt = (struct stmt *)
 				wordbuf_at(&sf->contents, sf->pos++);
 			/*
-			 * We directly handle statements which involve
-			 * blocking & library handling, and delegate
-			 * the rest to generic statement evaluation.
+			 * We directly handle marker statements since
+			 * they involve blocking & library handling,
+			 * but delegate the rest to generic statement
+			 * evaluation.
 			 */
-			switch (stmt->variety) {
-			case STMT_INSPECT:
-				wordtab_set(&sf->namespaces, stmt->sym);
-				break;
-			case STMT_PUBLIC:
-				sf->public = true;
-				break;
-			case STMT_REQUIRE:
-				blocked = require_section(
-					sf, stmt->sym, stmt->line0);
-				break;
-			case STMT_SECTION:
-				complete_section(sf);
-				if (sourcefile_begin(sf, stmt->sym))
+			if (stmt->variety == STMT_MARKER) {
+				blocked = handle_marker(sf, stmt);
+				if (blocked < 0)
 					return -1;
-				break;
-			default:
-				stmt_eval(stmt);
-				break;
-			}
+			} else
+				stmt_eval(stmt);	/* XXX retval */
 		}
 
 		/*
 		 * If we exited without being blocked, we're done with
-		 * this sourcefile; complete its final section if
-		 * necessary and add it to the complete queue.
+		 * this sourcefile; complete its final section and add
+		 * add it to the complete queue.
 		 */
 		if (!blocked) {
 			complete_section(sf);
@@ -362,114 +310,11 @@ static int library_resolve(void)
 		     (sf = node_of(struct sourcefile,
 				   circlist_iter_next(&iter)));
 		     /* nada */)
-			errf("%s:%d requires %s\n", sf->filename, sf->line,
-				symtab_lookup(sf->requirement));
+			errf("[%s]:%s:%d requires %s\n",
+			     symtab_lookup(sf->library),
+			     symtab_lookup(sf->filename), sf->line,
+			     symtab_lookup(sf->requirement));
 		return -1;
 	}
 	return 0;
-}
-
-int library_load(const char *name)
-{
-	int retval = -1;
-
-	library_init(name);
-	int libfd = library_find();
-	if (libfd < 0) goto done;
-	retval = library_read(libfd) || library_resolve();
-	close(libfd);
-done:
-	library_fini();
-	return retval;
-}
-
-int library_load_files(int nnames, char *const names[])
-{
-	int retval = -1;
-
-	library_init("<arguments>");
-	for (int i = 0; i < nnames; ++i)
-		if (library_read_file(names[i]))
-			goto done;
-	retval = library_resolve();
-done:
-	library_fini();
-	return retval;
-}
-
-int library_read_stdin(void)
-{
-	int retval = -1;
-
-	const char *filename = "<standard input>";
-	library_init(filename);
-	retval = library_read_stream(filename, stdin) || library_resolve();
-	library_fini();
-	return retval;
-}
-
-/*
- * The REPL functions make somewhat unusual use of the resolve & complete
- * queues.  We initially put the sole sourcefile used for resolution in
- * the complete queue.  Before processing each line, we move it to the
- * resolve queue--resolution will move it back to the complete queue.
- *
- * For convenience, pull all public sections into the REPL sourcefile.
- */
-
-int library_repl_init(void)
-{
-	library_init("<REPL>");
-	struct sourcefile *sf = xmalloc(sizeof *sf);
-	sourcefile_init(sf, "<REPL>");
-	circlist_add_tail(&complete_queue, &sf->entry);
-	env_get_public(&sf->namespaces);
-	return 0;
-}
-
-int library_repl_fini(void)
-{
-	assert(circlist_is_empty(&resolve_queue));
-	assert(circlist_length(&complete_queue) == 1);
-	free_queue(&complete_queue);
-	library_fini();
-	return 0;
-}
-
-int library_repl_line(const char *line, int lineno)
-{
-	if (circlist_is_empty(&resolve_queue)) {
-		assert(circlist_length(&complete_queue) == 1);
-		circlist_add_head(&resolve_queue,
-				  circlist_remove_head(&complete_queue));
-	}
-	assert(circlist_length(&resolve_queue) == 1);
-	struct sourcefile *sf = node_of(struct sourcefile,
-					circlist_get_head(&resolve_queue));
-
-	struct scanner_state scanner;
-	mlc_yypstate *parser;
-
-	mlc_scan_init_raw(&scanner);
-	mlc_scan_string(line, &scanner, lineno);
-	parser = mlc_yypstate_new();
-	assert(parser);
-
-	int status;
-	do {
-		YYSTYPE val;
-		YYLTYPE loc;
-		int token = mlc_yylex(&val, &loc, scanner.flexstate);
-		status = mlc_yypush_parse(parser, token, &val, &loc, sf);
-	} while (status == YYPUSH_MORE);
-	sf->bound = wordbuf_used(&sf->contents);
-
-	mlc_yypstate_delete(parser);
-	mlc_scan_fini(&scanner);
-
-	the_current_sourcefile = sf;
-	if (status == 0)
-		status = library_resolve();
-	the_current_sourcefile = NULL;
-	return status;
 }

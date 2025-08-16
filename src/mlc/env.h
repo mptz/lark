@@ -23,25 +23,22 @@
  */
 
 /*
- * A global environment of free variables and defined substitutions.
+ * A global environment of defined constants.
  *
- * We're a little free (pun intended) with our use of the technical term
- * 'free variable' vis a vis its Lambda Calculus use.  In the Lambda
- * Calculus, all syntactically valid variable names are semantically valid
- * but some are free i.e. not bound by enclosing lambda expressions.  Such
- * free variables are manipulable as terms but not substituted-for.
+ * These constants can be either transparent (with visible values which
+ * can be referenced by subsequently defined terms) or opaque (serving as
+ * free variables, i.e. representing unevaluable expressions).  Binder
+ * flags track opacity as well as the reduction status of a given
+ * constant.  Depending on a constant's binder flags, we might store it
+ * as either an (evaluated or unevaluated) node or as a term to be
+ * substituted syntactically via lifting using let-expressions.
  *
- * We instead require free variables to be declared; declaration-by-mention
- * (implicit creation of free variables) is too error-prone in a software
- * engineering setting.  In our usage, a free variable is a declared variable
- * with no associated value.  Our reduction implementation treats such
- * variables as self-resolving i.e. they can be manipulated but resolve to
- * themselves rather than to values.
- *
- * The environment can also be explicitly extended with defined names
- * e.g. "id := [x. x]", in which case free uses of the name "id" will
- * subsequently resolve to the root of "[x. x]".  This substitution is
- * currently implemented via lambda lifting in resolve().
+ * In the vanilla Lambda Calculus, all syntactically valid variable names
+ * are semantically valid but some are free i.e. not bound by enclosing
+ * lambda expressions.  Such free variables are manipulable as terms but
+ * not substituted-for.  In MLC, we instead use pre-declared opaque
+ * constants; declaration-by-mention (implicit creation of free variables)
+ * is too error-prone in a software engineering setting.
  *
  * The environment is namespaced; names in the global environment, whether
  * declared or defined, must be unique in their namespaces but may exist
@@ -56,6 +53,7 @@
 struct binder;
 struct node;
 struct term;
+struct wordbuf;
 struct wordtab;
 
 extern void env_init(void);
@@ -66,10 +64,11 @@ extern struct binder *env_define(symbol_mt name, symbol_mt space,
 extern struct binder *env_install(symbol_mt name, symbol_mt space,
 				  struct term *term);
 extern struct binder *env_lookup(symbol_mt name, const struct wordtab *spaces);
-extern void env_get_public(struct wordtab *spaces);
-extern bool env_is_public(symbol_mt space);
-extern void env_public(symbol_mt space);
-extern int env_new_space(symbol_mt space);
 extern bool env_test(symbol_mt name);
+
+extern int env_begin(symbol_mt space, symbol_mt library);
+extern void env_publish(symbol_mt space, symbol_mt published);
+extern void env_published(symbol_mt space, struct wordbuf *buf);
+extern symbol_mt env_whose(symbol_mt space);
 
 #endif /* LARK_MLC_ENV_H */

@@ -53,13 +53,6 @@ static struct stmt *stmt_alloc(enum stmt_variety variety)
 	return stmt;
 }
 
-struct stmt *StmtConceal(symbol_mt id)
-{
-	struct stmt *stmt = stmt_alloc(STMT_CONCEAL);
-	stmt->sym = id;
-	return stmt;
-}
-
 struct stmt *StmtDef(struct form *var, struct form *val, unsigned flags)
 {
 	struct stmt *stmt = stmt_alloc(STMT_DEF);
@@ -77,38 +70,12 @@ struct stmt *StmtEcho(struct form *str)
 	return stmt;
 }
 
-struct stmt *StmtInspect(symbol_mt id)
+struct stmt *StmtMarker(enum marker_variety variety, symbol_mt huid)
 {
-	struct stmt *stmt = stmt_alloc(STMT_INSPECT);
-	assert(id != the_empty_symbol);
-	stmt->sym = id;
-	return stmt;
-}
-
-struct stmt *StmtPublic(void)
-{
-	return stmt_alloc(STMT_PUBLIC);
-}
-
-struct stmt *StmtRequire(symbol_mt id)
-{
-	struct stmt *stmt = stmt_alloc(STMT_REQUIRE);
-	assert(id != the_empty_symbol);
-	stmt->sym = id;
-	return stmt;
-}
-
-struct stmt *StmtReveal(symbol_mt id)
-{
-	struct stmt *stmt = stmt_alloc(STMT_REVEAL);
-	stmt->sym = id;
-	return stmt;
-}
-
-struct stmt *StmtSection(symbol_mt id)
-{
-	struct stmt *stmt = stmt_alloc(STMT_SECTION);
-	stmt->sym = id;
+	assert(huid != the_empty_symbol);
+	struct stmt *stmt = stmt_alloc(STMT_MARKER);
+	stmt->marker.variety = variety;
+	stmt->marker.huid = huid;
 	return stmt;
 }
 
@@ -126,20 +93,10 @@ void stmt_free(struct stmt *stmt)
 	case STMT_DEF:	form_free(stmt->def.var);
 			form_free(stmt->def.val);
 			break;
-	case STMT_ECHO:
-			form_free(stmt->form);
-			break;
-	case STMT_VAL:
-			form_free(stmt->val.val);
-			break;
-	case STMT_CONCEAL:
-	case STMT_INSPECT:
-	case STMT_PUBLIC:
-	case STMT_REQUIRE:
-	case STMT_REVEAL:
-	case STMT_SECTION:
-			/* nada */
-			break;
+	case STMT_ECHO: form_free(stmt->form); break;
+	case STMT_VAL:	form_free(stmt->val.val); break;
+	case STMT_MARKER:
+			/* nada */ break;
 	default: panicf("Unhandled stmt variety %d\n", stmt->variety);
 	}
 	stmt->variety = STMT_INVALID;	/* in case of accidental reuse */
@@ -241,8 +198,13 @@ static int stmt_define(symbol_mt name, struct form *form, unsigned flags)
 
 	assert(the_current_sourcefile);
 	symbol_mt space = the_current_sourcefile->namespace;
-	struct binder *binder;
+	if (space == the_empty_symbol) {
+		errf("No namespace yet, can't define '%s'\n",
+		     symtab_lookup(name));
+		return -1;
+	}
 
+	struct binder *binder;
 	if (flags & BINDING_LIFTING) {
 		/*
 		 * Don't flatten and convert to a node, instead install
@@ -328,32 +290,19 @@ static void stmt_reduce(struct form *form, unsigned flags)
 	      "===================================\n", stdout);
 }
 
-void stmt_eval(const struct stmt *stmt)
+int stmt_eval(const struct stmt *stmt)
 {
 	switch (stmt->variety) {
-	case STMT_CONCEAL: {
-		struct binder *binder = env_lookup(stmt->sym,
-			&the_current_sourcefile->namespaces);
-		if (binder) binder->flags |= BINDING_OPAQUE;
-		break;
-	}
 	case STMT_DEF:
-		stmt_define(stmt->def.var->var.name, stmt->def.val,
-			    stmt->def.flags);
-		break;
+		return stmt_define(stmt->def.var->var.name, stmt->def.val,
+				   stmt->def.flags);
 	case STMT_ECHO:
 		fputs(stmt->form->str, stdout);
 		putchar('\n');
-		break;
-	case STMT_REVEAL: {
-		struct binder *binder = env_lookup(stmt->sym,
-			&the_current_sourcefile->namespaces);
-		if (binder) binder->flags &= ~BINDING_OPAQUE;
-		break;
-	}
+		return 0;
 	case STMT_VAL:
 		stmt_reduce(stmt->val.val, stmt->val.flags);
-		break;
+		return 0;
 	default: panicf("Unhandled stmt variety %d\n", stmt->variety);
 	}
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009-2024 Michael P. Touloumtzis.
+ * Copyright (c) 2009-2025 Michael P. Touloumtzis.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -21,7 +21,6 @@
  */
 
 #include <assert.h>
-#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -133,13 +132,16 @@ void reset_eval_stats(void)
 /*
  * For left-to-right sanity checks, check two primary invariants:
  *
- * (1) no redexes (beta, primitive, test, ...)
- * (2) no values (abstractions) hidden behind renames.
+ * (1) no redexes (beta, test, ...)
+ * (2) no values (abstractions, atomics, etc) hidden behind renames.
  *
  * Note that detection of redexes during reduction relies on a lack
  * of renaming chains, since we look to a fixed depth of 1 to preserve
  * O(1) operation.  Therefore a failure of #2 will likely lead to a
- * failure of #1.
+ * failure of #1.  For this reason we're probably safe not checking
+ * every possible missed primitive redex--that logic would be very
+ * messy to duplicate here as it involves checking for evaluated
+ * arguments, not just an evaluated primitive operation.
  *
  * Additionally sanity-check list structure and depths.
  */
@@ -155,32 +157,31 @@ static void sanity_check_l(const struct node *node, unsigned depth)
 		/* double-check depths and relative depths */
 		assert(node->depth >= 0);
 		assert(node->depth == depth);
-		if (node_is_abs(node) && node_abs_body(node) &&
-		    node->depth + 1 != node_abs_body(node)->depth)
-			panicf("Depth mismatch between abs @%s and body @%s\n",
-			       memloc(node), memloc(node_abs_body(node)));
+		if (node_is_binder(node) && node_binder_body(node) &&
+		    node->depth + 1 != node_binder_body(node)->depth)
+			panicf("Depth mismatch between @%s and body @%s\n",
+			       memloc(node), memloc(node_binder_body(node)));
 
 		/* missed-redex check */
+		if (node->variety == NODE_LET)
+			panicf("Missed let-redex @%s\n", memloc(node));
 		const struct slot *slot = &node->slots[0];
-		if (node->variety == NODE_APP && slot->variety == SLOT_SUBST) {
-			const struct node *lhs = node_chase_lhs(slot->subst);
-			if (node_is_abs(lhs))
+		if (node->variety == NODE_APP && slot->variety == SLOT_SUBST)
+			if (node_is_abs(node_chase_lhs(slot->subst)))
 				panicf("Missed beta-redex @%s\n", memloc(node));
+		if (node->variety == NODE_TEST && slot->variety == SLOT_SUBST) {
+			const struct node *lhs = node_chase_lhs(slot->subst);
+			if (lhs->variety == NODE_VAL &&
+			    lhs->slots[0].variety == SLOT_NUM)
+				panicf("Missed test redex @%s\n", memloc(node));
 		}
 
-		/* XXX need separate missed-primitive check? */
-
-		/* missed-test check */
-		if (node->variety == NODE_TEST &&
-		    node->slots[0].variety == SLOT_SUBST &&
-		    node->slots[0].subst->nslots == 1 &&
-		    node->slots[0].subst->slots[0].variety == SLOT_NUM)
-			panicf("Missed test @%s\n", memloc(node));
-
-		/* rename-chain terminating in ABS? (non-ABS is OK) */
-		/* XXX does this need to check for primitive/test as well? */
-		if (node_abs_depth(node) > 1)
-			panicf("Missed rename chain @%s\n", memloc(node));
+		/* rename-chain terminating in value? */
+		for (size_t i = 0; i < node->nslots; ++i)
+			if (node->slots[i].variety == SLOT_SUBST &&
+			    node_subst_depth(node->slots[i].subst) > 0)
+				panicf("Missed rename chain @%s[%zu]\n",
+					memloc(node), i);
 	}
 }
 
@@ -208,10 +209,10 @@ static void sanity_check_r(const struct node *node, unsigned depth)
 		/* double-check depths and relative depths */
 		assert(node->depth >= 0);
 		assert(node->depth == depth);
-		if (node_is_abs(node) &&
-		    node->depth + 1 != node_abs_body(node)->depth)
-			panicf("Depth mismatch between abs @%s and body @%s\n",
-			       memloc(node), memloc(node_abs_body(node)));
+		if (node_is_binder(node) &&
+		    node->depth + 1 != node_binder_body(node)->depth)
+			panicf("Depth mismatch between @%s and body @%s\n",
+			       memloc(node), memloc(node_binder_body(node)));
 
 		/* uncollected garbage? */
 		if (node->nref == 0)
@@ -289,13 +290,9 @@ eval_rl:
 
 	/*
 	 * For us to have anything to do, the 0th slot in the head node
-	 * must be an explicit substitution.  When the head node is unary,
-	 * a substitution might be a name alias.  When the head term has
-	 * multiple slots (i.e. an application), it can only be a beta-redex
-	 * if the 0th slot is a substitution (a known term) rather than a
-	 * free or bound variable (an unknown term).  Or the term could be
-	 * a test... but without a substitution in the 0th slot we know
-	 * it's irreducible even before variety-directed dispatch.
+	 * must be an explicit substitution.  A substitution in the 0th
+	 * slot doesn't guarantee a redex, but the absence of one does
+	 * guarantee a non-redex.
 	 */
 	if (!head->nslots || head->slots[0].variety != SLOT_SUBST)
 		goto rule_move_left;		
@@ -323,10 +320,10 @@ eval_rl:
 		goto rule_test;
 	case NODE_VAR:
 		/*
-		 * A SUBST node encountered during R-to-L traversal is a
-		 * name alias.  In such a situation we forward references
-		 * to this SUBST to its its referent, avoiding renaming
-		 * chains that might lead us to miss redexes.
+		 * An explicit substitution VAR node encountered during
+		 * R-to-L traversal is a name alias.  In such a situation
+		 * we forward references to this node to its referent,
+		 * avoiding rename chains that might cause missed redexes.
 		 */
 		goto rule_rename;
 	default:
@@ -375,11 +372,10 @@ do_subst:
 	 * First traverse and preprocess the application's arguments:
 	 *
 	 * -- Create new nodes as needed.  Beta-reduction replaces bound
-	 *    variable slots (SLOT_BOUND) with explicit substitution
-	 *    slots (SLOT_SUBST), which are pointers to reduction-graph
-	 *    nodes.  Since application nodes can contain both bound and
-	 *    free variables, we must wrap those in substitution nodes
-	 *    prior to beta-reduction.
+	 *    variable (SLOT_BOUND) and constant (SLOT_CONSTANT) slots
+	 *    with explicit substitution (SLOT_SUBST) slots, which are
+	 *    pointers to reduction-graph nodes.  Wrapping variable &
+	 *    constant slots requires node allocation.
 	 *
 	 *    NOTE: in contrast to the SCAM abstract machine (both the
 	 *    abstract specification and the reference implementation),
@@ -690,15 +686,15 @@ eval_lr:
 	if (!head->nref) goto rule_collect;
 	if (reduction != REDUCTION_DEEP) goto rule_move_right;
 
+	/*
+	 * Left-to-right evaluation only performs reduction nodes which
+	 * have bodies (unevaluated subexpressions).
+	 */
 	switch (head->variety) {
-	case NODE_ABS:
-	case NODE_FIX:
-	case NODE_LET:
-		goto rule_enter_abs;
-	case NODE_TEST:
-		goto rule_enter_test;
-	default:
-		/* fall through */;
+	case NODE_ABS: case NODE_FIX:	goto rule_enter_abs;
+	case NODE_LET:			panic("Unevaluated NODE_LET\n");
+	case NODE_TEST:			goto rule_enter_test;
+	default:					/* fall through */;
 	}
 	/* fall through to rule_move_right... */
 
@@ -716,7 +712,6 @@ rule_move_up:
 	switch (outer->variety) {
 	case NODE_ABS:
 	case NODE_FIX:
-	case NODE_LET:
 		goto rule_exit_abs;
 	case NODE_TEST:
 		if (outer->slots[SLOT_TEST_CSQ].subst == head) {
@@ -727,10 +722,8 @@ rule_move_up:
 			goto eval_body;
 		}
 		goto rule_exit_test;
-	default:
-		/* fall through */;
+	default: panicf("Unhandled node variety %d\n", outer->variety);
 	}
-	panicf("Unhandled node variety %d\n", outer->variety);
 
 rule_collect:
 	if (EVAL_STATS) the_eval_stats.rule_collect++;
@@ -747,13 +740,14 @@ rule_enter_abs:
 	 * Enter into an abstraction.  We only do this for abstractions
 	 * which are referenced by other terms; otherwise we gc them.
 	 * This avoids useless reduction work.  Although let expressions
-	 * are structured differently from abstractions, they can be
-	 * treated uniformly here.
+	 * are structured differently from abstractions, they could be
+	 * treated uniformly here--but we don't encounter them on left-
+	 * to right reductions since they are always reducible.
 	 */
 	if (EVAL_STATS) the_eval_stats.rule_enter_abs++;
 	if (TRACE_EVAL)
 		printf("enter_abs[+%u]: vvv @%s\n", depth, memloc(head));
-	assert(node_is_binder(head));	/* ABS, FIX, or LET */
+	assert(node_is_abs(head));
 	assert(head->nref);
 
 	head->outer = outer, outer = head;	/* push outer */

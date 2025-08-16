@@ -247,18 +247,10 @@ void node_free(struct node *node)
 	node_heap_free(node);
 }
 
-int node_abs_depth(const struct node *node)
-{
-	int depth;
-	for (depth = 0; node->variety == NODE_VAR &&
-	     node->slots[0].variety == SLOT_SUBST; ++depth)
-		node = node->slots[0].subst;
-	return node_is_abs(node) ? depth : -1;
-}
-
 const struct node *node_chase_lhs(const struct node *node)
 {
-	while (node->slots[0].variety == SLOT_SUBST)
+	while (node->variety == NODE_VAR &&
+	       node->slots[0].variety == SLOT_SUBST)
 		node = node->slots[0].subst;
 	return node;
 }
@@ -287,6 +279,15 @@ void node_replace(struct node *node, struct node *dest)
 	node->next->prev = node;
 }
 
+int node_subst_depth(const struct node *node)
+{
+	int depth;
+	for (depth = 0; node->variety == NODE_VAR &&
+	     node->slots[0].variety == SLOT_SUBST; ++depth)
+		node = node->slots[0].subst;
+	return depth;
+}
+
 struct node *node_take_body(struct node *abs)
 {
 	assert(node_is_binder(abs));
@@ -304,28 +305,18 @@ void node_wipe_body(struct node *abs)
 	abs->slots[SLOT_ABS_BODY].subst = NULL;		/* wipe body */
 }
 
-static void node_list_indent(unsigned depth)
-{
-	fputs("          ", stdout);
-	for (unsigned i = 0; i < depth; ++i)
-		fputs(".   ", stdout);
-}
-
 static void node_list_slot(struct slot slot)
 {
 	switch (slot.variety) {
-	case SLOT_BOUND:	printf("bound[%d.%d]",
-				       slot.bv.up, slot.bv.across);
+	case SLOT_BOUND:	printf("$%d.%d", slot.bv.up, slot.bv.across);
 				break;
-	case SLOT_CONSTANT:	printf("constant[%zu]", slot.index);
+	case SLOT_CONSTANT:	printf("$%zu", slot.index);
 				break;
-	case SLOT_NUM:		fputs("num[", stdout);
-				num_print(slot.num);
-				fputs("]", stdout);
+	case SLOT_NUM:		num_print(slot.num);
 				break;
 	case SLOT_PARAM:	fputs(symtab_lookup(slot.name), stdout); break;
-	case SLOT_PRIM:		printf("prim[%s]", slot.prim->name); break;
-	case SLOT_STRING:	printf("str[%s]", slot.str); break;
+	case SLOT_PRIM:		printf("%s", slot.prim->name); break;
+	case SLOT_STRING:	printf("\"%s\"", slot.str); break;
 	case SLOT_SYMBOL:	printf("#%s", symtab_lookup(slot.sym)); break;
 	case SLOT_BODY: case SLOT_SUBST:
 				printf("^%s", memloc(slot.subst));
@@ -334,55 +325,19 @@ static void node_list_slot(struct slot slot)
 	}
 }
 
-static void
-node_list_contents(const struct node *node)
+static void node_list_name(const struct node *node)
 {
 	switch (node->variety) {
-	case NODE_ABS:
-	case NODE_FIX:
-	case NODE_LET:
-		for (size_t i = 1; i < node->nslots; ++i) {
-			putchar(i == 1 ? '<' : ',');
-			node_list_slot(node->slots[i]);
-		}
-		fputs(">\n", stdout);
-		node_list_body(node->slots[0].subst);
-		return;
-	case NODE_CELL:
-		for (size_t i = 0; i < node->nslots; ++i) {
-			fputs(i == 0 ? "[" : " | ", stdout);
-			node_list_slot(node->slots[i]);
-		}
-		fputs("]\n", stdout);
-		return;
-	case NODE_TEST:
-		assert(node->nslots == 3);
-		putchar('[');
-		node_list_slot(node->slots[0]);
-		fputs("? ", stdout);
-		node_list_slot(node->slots[1]);
-		fputs(" | ", stdout);
-		node_list_slot(node->slots[2]);
-		fputs("]\n", stdout);
-		node_list_body(node->slots[1].subst);
-		node_list_body(node->slots[2].subst);
-		return;
-	case NODE_SENTINEL:
-	case NODE_VAL:
-	case NODE_VAR:
-		assert(node->nslots == 1);
-		node_list_slot(node->slots[0]);
-		putchar('\n');
-		return;
-	default:
-		/* fall through... */;
-	}
-
-	putchar('\n');
-	for (size_t i = 0; i < node->nslots; ++i) {
-		node_list_indent(node->depth);
-		node_list_slot(node->slots[i]);
-		putchar('\n');
+	case NODE_SENTINEL:	fputs("sent", stdout); break;
+	case NODE_ABS:		fputs("abs ", stdout); break;
+	case NODE_APP:		fputs("app ", stdout); break;
+	case NODE_CELL:		fputs("cell", stdout); break;
+	case NODE_FIX:		fputs("fix ", stdout); break;
+	case NODE_LET:		fputs("let ", stdout); break;
+	case NODE_TEST:		fputs("test", stdout); break;
+	case NODE_VAL:		fputs("val ", stdout); break;
+	case NODE_VAR:		fputs("var ", stdout); break;
+	default:	panicf("Unhandled node variety %d\n", node->variety);
 	}
 }
 
@@ -390,10 +345,20 @@ static void node_list(const struct node *node)
 {
 	printf("%8s: ", memloc(node));
 	for (unsigned i = 0; i < node->depth; ++i)
-		fputs(node->variety == NODE_SENTINEL ? ".>>>" : ".___", stdout);
+		fputs(node->variety == NODE_SENTINEL ? ".>>>" : ".   ", stdout);
 
 	printf("@+%d#%d ", node->depth, node->nref);
-	node_list_contents(node);
+	node_list_name(node);
+	putchar(' ');
+
+	for (size_t i = 0; i < node->nslots; ++i) {
+		putchar(i ? ',' : '[');
+		node_list_slot(node->slots[i]);
+	}
+	fputs("]\n", stdout);
+	for (size_t i = 0; i < node->nslots; ++i)
+		if (node->slots[i].variety == SLOT_BODY)
+			node_list_body(node->slots[i].subst);
 }
 
 void node_list_body(const struct node *node)

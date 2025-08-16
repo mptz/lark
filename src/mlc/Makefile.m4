@@ -1,8 +1,8 @@
 make_binary(mlc, beta.c binder.c env.c flatten.c form.c
-		 heap.c interpret.c library.c
+		 heap.c interpret.c libload.c library.c
 		 memloc.c mlc.c mlc.l mlc.y
-		 node.c num.c parse.c prim.c readback.c reduce.c
-		 resolve.c sourcefile.c stmt.c subst.c
+		 node.c num.c prim.c readback.c reduce.c
+		 repl.c resolve.c sourcefile.c stmt.c subst.c
 		 term.c unflatten.c, util, readline)
 
 export MLCLIB := src/mlc/test:lib/mlc

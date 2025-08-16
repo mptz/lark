@@ -33,18 +33,19 @@ struct stmt;
 
 struct sourcefile {
 	struct circlist entry;		/* for run/blocked queuing */
-	struct wordbuf contents;	/* statements in sourcefile */
+	struct wordbuf contents,	/* statements in sourcefile */
+		       locals;		/* locally required sections */
 	struct wordtab namespaces;	/* active namespaces */
-	symbol_mt namespace,		/* current namespace */
-		  section,		/* same as namespace if named */
-		  requirement;		/* requirement we're blocked on */
-	const char *filename;		/* source file name */
+	symbol_mt library,		/* containing library */
+		  filename,		/* name of containing file */
+		  namespace,		/* current section namespace */
+		  requirement;		/* section we're blocked on */
 	size_t pos, bound;		/* next line to resolve vs bound */
 	int line;			/* file line number for requirement */
-	bool public;			/* public namespace? */
 };
 
-extern void sourcefile_init(struct sourcefile *sf, const char *filename);
+extern void sourcefile_init(struct sourcefile *sf, symbol_mt library,
+			    symbol_mt filename);
 extern void sourcefile_fini(struct sourcefile *sf);
 extern void sourcefile_add(struct sourcefile *sf, struct stmt *stmt);
 extern int sourcefile_begin(struct sourcefile *sf, symbol_mt section);

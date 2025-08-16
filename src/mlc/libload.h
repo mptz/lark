@@ -1,3 +1,5 @@
+#ifndef LARK_MLC_LIBLOAD_H
+#define LARK_MLC_LIBLOAD_H
 /*
  * Copyright (c) 2009-2025 Michael P. Touloumtzis.
  *
@@ -20,3 +22,7 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
+extern int library_load(const char *name);
+extern int library_load_files(int nnames, char *const names[]);
+
+#endif /* LARK_MLC_LIBLOAD_H */

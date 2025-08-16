@@ -1,5 +1,5 @@
-#ifndef LARK_MLC_PARSE_H
-#define LARK_MLC_PARSE_H
+#ifndef LARK_MLC_REPL_H
+#define LARK_MLC_REPL_H
 /*
  * Copyright (c) 2009-2025 Michael P. Touloumtzis.
  *
@@ -22,4 +22,10 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
-#endif /* LARK_MLC_PARSE_H */
+extern symbol_mt repl_lib_id;
+
+extern void repl_init(symbol_mt section);
+extern void repl_fini(void);
+extern int repl_line(const char *line, int lineno);
+
+#endif /* LARK_MLC_REPL_H */

@@ -31,11 +31,11 @@
 struct sourcefile;
 extern struct sourcefile *the_current_sourcefile;
 
-extern int library_load(const char *name);
-extern int library_load_files(int nnames, char *const names[]);
-extern int library_read_stdin(void);
-extern int library_repl_init(void);
-extern int library_repl_line(const char *line, int lineno);
-extern int library_repl_fini(void);
+extern void library_init(void);
+extern void library_fini(void);
+
+extern void library_queue(struct sourcefile *sf);
+extern struct sourcefile *library_recycle(void);
+extern int library_resolve(void);
 
 #endif /* LARK_MLC_LIBRARY_H */

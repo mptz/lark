@@ -54,7 +54,10 @@
  * nested start conditions like comments and quoted strings.  This isn't
  * a start condition stack, just additional state for our FSM.
  */
-#define YY_USER_INIT do { BEGIN(yyextra->mode); } while (0)
+#define YY_USER_INIT do {					\
+		yylloc->first_line = yylloc->last_line = 1;	\
+		BEGIN(yyextra->repl ? sc_listing : sc_header );	\
+	} while (0);
 
 /*
  * This is a terrible hack required (AFACT) to compile on older versions
@@ -65,6 +68,7 @@
 #define YYerror 256
 #define YYUNDEF 257
 
+static symbol_mt lexhuid(char *text);
 static const char *lexstr(struct bytebuf *buf);
 static int scanerr(int lineno, const char *msg, const char *text);
 %}
@@ -86,6 +90,7 @@ static int scanerr(int lineno, const char *msg, const char *text);
 %x sc_notebook
 %x sc_comment
 %s sc_greenbar
+%x sc_header
 %x sc_string
 
 /*
@@ -111,7 +116,7 @@ GAP		{BLANK}+
 OGAP		{BLANK}*
 WRAP		{BLANK}*\n[[:space:]]*
 DOTS		\.{7,}
-UNDERLINE	_{7,}
+BAR		={7,}
 
 /*
  * Markers.  These can appear within notebook mode as well as in listings.
@@ -119,13 +124,18 @@ UNDERLINE	_{7,}
  * line and are always a vertical bar followed by at least 7 punctuation
  * marks (i.e. the full marker beginning is 8 characters or one tab stop).
  */
+SECTION		^\|{BAR}\ #{HUID}{OGAP}$
 PERFORATION	^\|{DOTS}{OGAP}$
-INSPECT		^\|{DOTS}{OGAP}Inspect{GAP}#{HUID}{OGAP}$
-PUBLIC		^\|{DOTS}{OGAP}Public{OGAP}$
-REQUIRE		^\|{DOTS}{OGAP}Require{GAP}#{HUID}({OGAP}|,.*)$
-SECTIONRAND	^\|{UNDERLINE}Section{UNDERLINE}?$
-SECTIONHUID	^\|{UNDERLINE}Section{GAP}#{HUID}{UNDERLINE}?$
-MARKERR		^\|[._]+.*$
+MARKER_ERROR	^\|[.=]+.*$
+
+/*
+ * Section attributes.  These can only appear in a section header.
+ */
+DISCARD		^\|{GAP}Discard{GAP}#{HUID}{OGAP}(\(.*\))?{OGAP}$
+INSPECT		^\|{GAP}Inspect{GAP}#{HUID}{OGAP}(\(.*\))?{OGAP}$
+PUBLISH		^\|{GAP}Publish{GAP}#{HUID}{OGAP}(\(.*\))?{OGAP}$
+REQUIRE		^\|{GAP}Require{GAP}#{HUID}{OGAP}(\(.*\))?{OGAP}$
+RETRACT		^\|{GAP}Retract{GAP}#{HUID}{OGAP}(\(.*\))?{OGAP}$
 
 %%
 
@@ -140,32 +150,29 @@ MARKERR		^\|[._]+.*$
 	.|\n		/* ignore anything else */
 }
 
-<sc_listing,sc_notebook>{
-	{INSPECT} {
-		char *huid = rawmemchr(yytext, '#');
-		(++huid)[HUID_CHARS] = '\0';
-		yylval->sym = symtab_intern(huid);
-		return INSPECT;
-	}
-	{PUBLIC}	return PUBLIC;
-	{REQUIRE} {
-		char *huid = rawmemchr(yytext, '#');
-		(++huid)[HUID_CHARS] = '\0';
-		yylval->sym = symtab_intern(huid);
-		return REQUIRE;
-	}
-	{SECTIONRAND} {
-		yylval->sym = the_empty_symbol;
+<sc_listing,sc_notebook,sc_header>{
+	{SECTION} {
+		BEGIN(sc_header);
+		yylval->sym = lexhuid(yytext);
 		return SECTION;
 	}
-	{SECTIONHUID} {
-		char *huid = rawmemchr(yytext, '#');
-		(++huid)[HUID_CHARS] = '\0';
-		yylval->sym = symtab_intern(huid);
-		return SECTION;
-	}
-	{MARKERR} {
+	{MARKER_ERROR} {
 		errf("Scan error: Invalid marker '%s'\n", yytext);
+		return YYUNDEF;
+	}
+}
+
+<sc_header>{
+	{DISCARD}	yylval->sym = lexhuid(yytext); return DISCARD;
+	{INSPECT}	yylval->sym = lexhuid(yytext); return INSPECT;
+	{PUBLISH}	yylval->sym = lexhuid(yytext); return PUBLISH;
+	{REQUIRE}	yylval->sym = lexhuid(yytext); return REQUIRE;
+	{RETRACT}	yylval->sym = lexhuid(yytext); return RETRACT;
+	^\|\*.*$	/* ignore comment in section header */
+	^{OGAP}$	BEGIN(yyextra->mode);
+	\n		/* ignore other end-of-line */
+	^.*$	{
+		errf("Scan error: Invalid header line '%s'\n", yytext);
 		return YYUNDEF;
 	}
 }
@@ -226,15 +233,13 @@ $is-pair	yylval->prim = &prim_is_pair;	return PRIM;
 
 $undefined	yylval->prim = &prim_undefined;	return PRIM;
 
-$echo		return CMD_ECHO;
 $env		return ENV_DUMP;
-
-$conceal	return CONCEAL;
-$reveal		return REVEAL;
+$symtab		return SYMTAB_DUMP;
 
 		/* keywords which can decay into variables */
 Deep		yylval->form = FormVarS(yytext); return KW_DEEP;
 Def		yylval->form = FormVarS(yytext); return KW_DEF;
+Echo		yylval->form = FormVarS(yytext); return KW_ECHO;
 let		yylval->form = FormVarS(yytext); return KW_LET;
 Lifting		yylval->form = FormVarS(yytext); return KW_LIFTING;
 Literal		yylval->form = FormVarS(yytext); return KW_LITERAL;
@@ -318,6 +323,7 @@ void mlc_scan_init_raw(struct scanner_state *scanner)
 	yyset_extra(scanner, scanner->flexstate);
 	bytebuf_init(&scanner->strbuf);
 	scanner->mode = sc_listing;
+	scanner->repl = 0;
 }
 
 /*
@@ -420,6 +426,13 @@ void mlc_scan_string(const char *s, struct scanner_state *scanner,
 	mlc_yyset_lineno(lineno, scanner->flexstate);
 }
 
+static symbol_mt lexhuid(char *text)
+{
+	char *huid = rawmemchr(text, '#');
+	(++huid)[HUID_CHARS] = '\0';
+	return symtab_intern(huid);
+}
+
 static const char *lexstr(struct bytebuf *buf)
 {
 	size_t len = bytebuf_used(buf);
@@ -436,7 +449,7 @@ static int scanerr(int lineno, const char *msg, const char *text)
 	 * of $undefined/YYUNDEF vs YYerror.  Perhaps once error handling
 	 * in the parser is further along.
 	 */
-	fprintf(stderr, "Scan error: %d: %s '%s', returning $undefined\n",
+	errf("Scan error: %d: %s '%s', returning $undefined\n",
 		lineno, msg, text);
 	return YYUNDEF;
 }

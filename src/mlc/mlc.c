@@ -38,8 +38,9 @@
 
 #include "env.h"
 #include "heap.h"
-#include "library.h"
+#include "libload.h"
 #include "mlc.h"
+#include "repl.h"
 
 symbol_mt the_placeholder_symbol;
 symbol_mt the_undefined_symbol;
@@ -88,6 +89,7 @@ static void usage(void)
 	"        -l <pathname>   Load the given library "
 					"(may be given more than once)\n"
 	"        -q              Quieter output\n"
+	"        -r <HUID>       Require section in REPL\n"
 	"        -T <flag>       Trace behavior associated with flag\n"
 	"                        Flags: 'parser', 'unflatten'\n"
 	);
@@ -103,11 +105,14 @@ int main(int argc, char *const argv[])
 	int c;
 	struct wordbuf loadlibs;
 	wordbuf_init(&loadlibs);
-	while ((c = getopt(argc, argv, "fl:qT:")) != -1) {
+	symbol_mt require_section = 0;
+
+	while ((c = getopt(argc, argv, "fl:qr:T:")) != -1) {
 		switch (c) {
 		case 'f': listing_setting = 1; break;
 		case 'l': wordbuf_push(&loadlibs, (word) optarg); break;
 		case 'q': quiet_setting = 1; break;
+		case 'r': require_section = symtab_intern(optarg); break;
 		case 'T': set_trace(optarg); break;
 		default: usage();
 		}
@@ -127,8 +132,8 @@ int main(int argc, char *const argv[])
 
 	if (optind < argc) {
 		/*
-		 * Any files specified on the command line form a single,
-		 * unnamed library which we now load as last in sequence.
+		 * Any files specified on the command line form a single
+		 * library with random per-invocation ID.
 		 */
 		result = library_load_files(argc - optind, argv + optind);
 
@@ -147,23 +152,28 @@ int main(int argc, char *const argv[])
 		char prompt [30] = "1> ";
 		int lineno = 1;
 
-		library_repl_init();
+		repl_init(require_section);
 		char *input;
 		while ((input = readline(prompt))) {
 			if (*input)
 				add_history(input);
-			library_repl_line(input, lineno);
+			repl_line(input, lineno);
 			xfree(input);
 			snprintf(prompt, sizeof prompt, "%d> ", ++lineno);
 		}
-		library_repl_fini();
+		repl_fini();
 		if (histfile) {
 			write_history(histfile);
 			globfree(&globbuf);
 		}
 
 	} else {
-		result = library_read_stdin();
+		/*
+		 * Read from standard input, again as a single library
+		 * with random per-invocation ID.
+		 */
+		char *argv [] = { "-" };
+		result = library_load_files(1, argv);
 	}
 
 done:
