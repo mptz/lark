@@ -11,8 +11,7 @@ consistent with the other arithmetic operations, and is not significantly
 slower than a Y combinator version, as most of the time is spend in the
 subtraction and comparison reductions during the actual division process.
 
-|________________________________Section #_kFEljVo.nSiv-qVa.at4bbsgK_______
-|.......Public
+|============================================== #_kFEljVo.nSiv-qVa.at4bbsgK
 
 We start with some helpers for 3-tuples in pure lambda calculus.
 
@@ -23,8 +22,8 @@ We start with some helpers for 3-tuples in pure lambda calculus.
 |:	trip3	:= [t. [_, _, z. z]; t].
 |:
 
-|____________________________________________________________Section_______
-|.......Require #VLWBCVQ5.kSBalCkf.5Ir-lvSl
+|============================================== #JJzu02qh.MYK_n6pe.J9YfK2MO
+|	Require #VLWBCVQ5.kSBalCkf.5Ir-lvSl
 
                  Division Single Step & Core Algorithm
 
@@ -55,8 +54,7 @@ The parentheses around [s. s; (s; trip1)] are necessary; recall that
 |:			    (cons3 (n; divstep, m, zero))].
 |:
 
-|________________________________Section #yPZE8iYU.OB5wLg1y.4qPVHyV1_______
-|.......Public
+|============================================== #yPZE8iYU.OB5wLg1y.4qPVHyV1
 
                            Division & Modulus
 

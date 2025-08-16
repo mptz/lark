@@ -2,11 +2,11 @@
 
 Integers and Integer Arithmetic.
 
-|.......Require #VLWBCVQ5.kSBalCkf.5Ir-lvSl
-|.......Require #yPZE8iYU.OB5wLg1y.4qPVHyV1
+|============================================== #x00y5GVu.K12kB7mL.54UqU_hl
+|	Require #VLWBCVQ5.kSBalCkf.5Ir-lvSl
+|	Require #yPZE8iYU.OB5wLg1y.4qPVHyV1
 
-|________________________________Section #P_1qZIxy.lb4GjQ8H.78bYJEfd_______
-|.......Public
+|============================================== #P_1qZIxy.lb4GjQ8H.78bYJEfd
 
 The integer representation extends the basic Church numerals with a sign
 function 's' which represents the sign bit.  The sign functdion is only

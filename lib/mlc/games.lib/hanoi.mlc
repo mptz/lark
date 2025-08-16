@@ -1,9 +1,10 @@
 |* Minimal Towers of Hanoi solution.
 
+|============================================== #EU2d0Wq_.BuNBQjCo.v_IJ6hqz
+
 fuse3 := [c1, c2, c3. $fuse (c1, $fuse (c2, c3))].
 
-|________________________________Section #gKkWiF1Y.gVNNu6On.zkJY-JeC_______
-|.......Public
+|============================================== #gKkWiF1Y.gVNNu6On.zkJY-JeC
 
 hanoi-discs := [self! n.
 	let { prior := [n? self (n - 1) | []] }

@@ -1,4 +1,5 @@
 |MLC Notebook v1|
+|	Require #QpZfH-Lc.JKOInzrw.hGai0lc1
 
                           A Sudoku Solver in MLC
 
@@ -22,7 +23,7 @@ DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
 OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR
 THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-|____________________________________________________________Section_______
+|============================================== #FgVJlpCq.DztqMU1m.HvvVQ-4_
 
                        Solution Approach & Concepts
 
@@ -56,10 +57,7 @@ selecting one of its possibilities and propagating that solution as above.
 Upon encountering an overconstrained square, we conclude that our guesses
 are faulty and we must backtrack to revise them.
 
-|________________________________Section #y9qEEMfF.3VvMRtww.Eb4LqHle_______
-|.......Require #tzNuz8Mh.ZK1TSbod.gw_zhkMK
-|.......Require #t29ihI7k.pn_OFpk4.8F3O9QPj
-|.......Public
+|============================================== #y9qEEMfF.3VvMRtww.Eb4LqHle
 
                           Square Representation
 
@@ -104,61 +102,75 @@ single-valued or unconstrained:
 |:		[digits. gather (pmult, 1, digits)].
 |:
 
+|============================================== #BXPHiWTa.PGk0-tuX.ommaE6JN
+
+                           Constraining Squares
+
+The fundamental solving operation is 'constraining' a square.  Given a
+square's current value and a value, remove that value from the square's
+possible values.  There are 4 outcomes:
+
+(1) Square is unchanged; the given value was already impossible.
+(2) Square is still underconstrained, but with one fewer possibility.
+(3) Square is newly solved: we removed the penultimate possibility.
+(4) Square is newly overconstrained: we removed the final possibility.
+
+For outcome (2) we'll want to replace the square's contents with the now
+reduced possibilities (replacing is OK for 1 as well; it's a no-op).
+For outcome (3) (transition from unsolved to solved) we have a new
+constraint to propagate to the square's peers.  For (4), we've identified
+an earlier inconsistency and must backtrack.
+
+Remove the given value from the square if it's a possibility for the
+square.  Return the new square (without the value) or the original square
+if the value was already not a possibility.
+
+|:
+|:	constrain-square := [square, value.
+|:		let { without-value := square / value }
+|:		[without-value; $is-integral? without-value | square]].
+|:
+
+Return the solution (in digit form) of a completely solved square,
+otherwise return 0.  Even when working with primes, this can be used as
+a solved/not solved truth value.
+
+|:
+|:	square-solution :=
+|:		[square. [square <= last-prime?
+|:			  at (square, prime-to-digit-key) | 0]].
+|:
+
+What are the possible values in a square?  Essentially prime factoring.
+Needed for hypothesis testing.
+
+|:
+|:	square-possibilities := [square.
+|:		let { try := [accum, prime.
+|:			[$is-integral (square / prime)?
+|:			cons (prime, accum) | accum]].
+|:		} gather (try, [], first-nine-primes)].
+|:
+
+|============================================== #A9sdVZHy.M9bAuSUu.HkEscnNr
+
+                           Grid Representation
+
+A grid is represented as a 9*9-element cell, using the prime number
+representation above for individual squares.
+
+|:
+|:	all-digits := [1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9].
+|:	num-digits := # all-digits.
+|:	grid-size := num-digits * num-digits.
+|:
+
+One of the key grid operations is finding a square's "peers", i.e.
+the other squares with which it shares a row, column, or box.  We
+precalculate a "peer key" which, for each square index 0..80,
+contains row, column, and box arrays containing the square's peers.
+
 |..........................................................................
-
-|*
-|* The fundamental solving operation is 'constraining' a square.
-|* Given a square's current value and a value, remove that value from
-|* the square's possible values.  There are 4 outcomes:
-|*
-|* (1) Square is unchanged; the given value was already impossible.
-|* (2) Square is still underconstrained, but with one fewer possibility.
-|* (3) Square is newly solved: we removed the penultimate possibility.
-|* (4) Square is newly overconstrained: we removed the final possibility.
-|*
-|* For outcome (2) we'll want to replace the square's contents with
-|* the now reduced possibilities (replacing is OK for 1 as well; it's
-|* a no-op).  For outcome (3) (transition from unsolved to solved) we
-|* have a new constraint to propagate to the square's peers.  For (4),
-|* we've identified an earlier inconsistency and must backtrack.
-|*
-
-|* Remove the given value from the square if it's a possibility for the
-|* square.  Return the new square (without the value) or the original
-|* square if the value was already not a possibility.
-|*
-constrain-square := [square, value.
-	let { without-value := square / value }
-	[without-value; $is-integral? without-value | square]].
-
-|* Return the solution (in digit form) of a completely solved square,
-|* otherwise return 0.  Even when working with primes, this can be used
-|* as a solved/not solved truth value.
-|*
-square-solution :=
-	[square. [square <= last-prime? at (square, prime-to-digit-key) | 0]].
-
-|* What are the possible values in a square?  Essentially prime factoring.
-|* Needed for hypothesis testing.
-|*
-square-possibilities := [square.
-	let { try := [accum, prime.
-		[$is-integral (square / prime)? cons (prime, accum) | accum]]. }
-	gather (try, [], first-nine-primes)].
-
-|*
-|* Grid representation.  A grid is represented as a 9*9-element cell,
-|* using the prime number representation above for individual squares.
-|*
-|* One of the key grid operations is finding a square's "peers", i.e.
-|* the other squares with which it shares a row, column, or box.  We
-|* precalculate a "peer grid" which, for each square index 0..80,
-|* contains row, column, and box arrays containing the square's peers.
-|*
-
-all-digits := [1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9].
-num-digits := # all-digits.
-grid-size := num-digits * num-digits.
 
 grid-row-indexes := [
 	[  0 |  1 |  2 |  3 |  4 |  5 |  6 |  7 |  8 ] |
@@ -199,26 +211,37 @@ grid-box-indexes := [
 	[ 57 | 58 | 59 | 66 | 67 | 68 | 75 | 76 | 77 ] |
 	[ 60 | 61 | 62 | 69 | 70 | 71 | 78 | 79 | 80 ] ].
 
-grid-groups := fuse (grid-row-indexes,
-	       fuse (grid-col-indexes,
-		     grid-box-indexes)).
+|..........................................................................
 
-gather-peers := [i.
-	let { containing-i := [a, c. [found (i, c)? fuse (a, c) | a]] }
-	gather (containing-i, [], grid-groups)].
+|:
+|:	grid-groups := fuse (grid-row-indexes,
+|:			     fuse (grid-col-indexes, grid-box-indexes)).
+|:
+|:	gather-peers := [i.
+|:		let { containing-i := [a, c. [found (i, c)? fuse (a, c) | a]] }
+|:		gather (containing-i, [], grid-groups)].
+|:
+|:	peer-key := fill (grid-size, gather-peers).
+|:
 
-peer-key := fill (grid-size, gather-peers).
+The main interface to square -> peers: returns a grid with the given
+square value in i's peers and value of 1 otherwise.  When we solve a
+square, we construct such a peer grid as a constraint set restricting
+the solved value from appearing in the node's peers.
 
-|* The main interface to square -> peers: returns a grid with the given
-|* square value in i's peers and value of 1 otherwise.  When we solve a
-|* square, we construct such a peer grid as a constraint set restricting
-|* the solved value from appearing in the node's peers.
-|*
-peer-grid := [i, s.
-	let { peers := at (i, peer-key) }
-	let { peer-but-not-self :=
-		[j. [$and (i <> j, found (j, peers))? s | 1]] }
-	fill (grid-size, peer-but-not-self)].
+|:
+|:	peer-grid := [i, s.
+|:		let { peers := at (i, peer-key) }
+|:		let { peer-but-not-self :=
+|:			[j. [$and (i <> j, found (j, peers))? s | 1]] }
+|:		fill (grid-size, peer-but-not-self)].
+|:
+
+|============================================== #-5Xh0wB6.rpGrLrE3.vzJXSdrR
+
+                             Everything Else
+
+|..........................................................................
 
 digit-to-string-key :=
 	[" " | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9"].
@@ -365,8 +388,7 @@ constrain-and-guess := [constrain-and-guess! grid0, constraints0.
 
 	do-analyze (constrain (grid0, constraints0))].
 
-|________________________________Section #YCVDw_AO.6HLOPjtd.y38Zzrkd_______
-|.......Public
+|============================================== #YCVDw_AO.6HLOPjtd.y38Zzrkd
 
 |* Use constrain-and-guess to apply the full solution procedure.
 |*
@@ -374,9 +396,9 @@ try-solve := [digit-grid.
 	let { prime-grid := digit-grid; initial-grid }
 	constrain-and-guess (prime-grid, prime-grid; initial-constraints)].
 
-|*
-|* Test grids
-|*
+|============================================== #JZFi1UAh.ybJYmcyv.EPrqlDHs
+
+|*                              Test Grids
 
 |* for testing
 impossible-grid :=
