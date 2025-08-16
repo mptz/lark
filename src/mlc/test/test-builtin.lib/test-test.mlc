@@ -1,4 +1,5 @@
-$echo "Testing un-evaluated tests".
+
+Echo "Testing un-evaluated tests".
 [#p? #a | #b].
 [#p + 1? #a | #b].
 [x. [x? #a | #b]].
@@ -6,7 +7,7 @@ $echo "Testing un-evaluated tests".
 [[x. x]? #a | #b].
 [[x. x; 5] (3 + 3)? #a | #b].
 
-$echo "Testing test evaluation".
+Echo "Testing test evaluation".
 [0? #fail | #pass].
 [1? #pass | #fail].
 [1 - 1? #fail | #pass].
@@ -17,7 +18,7 @@ $echo "Testing test evaluation".
 [[0? 0 | 1] - 1? #fail | #pass].
 [0? [x, y. x] | [x, y. y]] (#fail, #pass).
 
-$echo "Testing tests with equality primitives".
+Echo "Testing tests with equality primitives".
 [0 == 0? #pass | #fail].
 [0 == 1? #fail | #pass].
 [1 == 1? #pass | #fail].
@@ -31,7 +32,7 @@ $echo "Testing tests with equality primitives".
 [2 <> 1 + 1? #fail | #pass].
 [1 + 1 <> 2? #fail | #pass].
 
-$echo "Testing tests with inequality primitives".
+Echo "Testing tests with inequality primitives".
 [1 < 2? #pass | #fail].
 [2 < 1? #fail | #pass].
 [1 + 1 <= 2? #pass | #fail].
@@ -45,11 +46,11 @@ $echo "Testing tests with inequality primitives".
 |* abstractions they have internal chains for consequent and alternative
 |* which need special handling while copying.  We must test both the copy
 |* and the the substitution (overwrite-in-place) case.
-$echo "Testing test-node substitution and copying".
+Echo "Testing test-node substitution and copying".
 [f, x. f (x)] ([y. [y? #pass | #fail]], 0 + 1).
 [toggle. 1; toggle; toggle; toggle; toggle] ([b. [b? 0 | 1]]).
 
-$echo "Testing reduction inside tests".
+Echo "Testing reduction inside tests".
 [x. [1 + 1 + x? #a | #b]].
 [#t? 1 + 1 | 2 + 2].
 [n. [#t? 3 * 3 | n + 10]] (5).

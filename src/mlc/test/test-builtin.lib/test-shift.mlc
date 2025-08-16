@@ -2,7 +2,7 @@
 
 Tests of bound variable shifting.
 
-|________________________________Section #9GV-Em8J.d4TGjNre.eDvHJG2I_______
+|============================================== #9GV-Em8J.d4TGjNre.eDvHJG2I
 
 Test a single shift during unflattening.  a's upwards index in [x. a]
 starts at 1 since it's bound in the 2nd surrounding abstraction (indexes
@@ -11,7 +11,7 @@ is pushed one layer deeper so the index (abstraction height of its binder)
 is increased by 1.
 
 |:
-|:	$echo "Testing shifting through one substitution".
+|:	Echo "Testing shifting through one substitution".
 |:
 |:	[a. [x. a] [y. [z. y]]].
 |:
@@ -21,7 +21,7 @@ shifted once for its first substitution via 'y' and a second time,
 even deeper, for its second substitution via 's'.
 
 |:
-|:	$echo "Testing shifting through multiple substitutions".
+|:	Echo "Testing shifting through multiple substitutions".
 |:
 |:	[a. [x. a] [y. [z. y]] [s. [t. [u. [v. s]]]]].
 |:
@@ -32,7 +32,7 @@ of a sentinel was updated, and (2) the new reference was at a lower depth
 than the sentinel itself.  These tests check for regression.
 
 |:
-|:	$echo "Testing shifting for substituted bodies".
+|:	Echo "Testing shifting for substituted bodies".
 |:
 |:	[a. ([x. [y. x]]) ([z. a])].
 |:	[a. [b. ([x. [y. [z. x]]]) ([w. a + b])]].

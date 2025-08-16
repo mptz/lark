@@ -1,8 +1,12 @@
-|.......Require #tzNuz8Mh.ZK1TSbod.gw_zhkMK
-|.......Require #t29ihI7k.pn_OFpk4.8F3O9QPj
-|.......Require #y9qEEMfF.3VvMRtww.Eb4LqHle
+|	Require #QpZfH-Lc.JKOInzrw.hGai0lc1 (data.lib)
+|	Require #tn0pgsyU.a4fwDCX_.CjZ0-W5q (Sudoku Solver)
+|	Inspect #y9qEEMfF.3VvMRtww.Eb4LqHle (Square Representation)
+|	Inspect #BXPHiWTa.PGk0-tuX.ommaE6JN (Constraining Squares)
+|	Inspect #A9sdVZHy.M9bAuSUu.HkEscnNr (Grid Representation)
 
-$echo "Testing digit <-> prime conversions".
+|============================================== #vrYs84Zw.zRJP1vpC.XsRuymxC
+
+Echo "Testing digit <-> prime conversions".
 $fill (9, [d. digit-to-prime (d + 1)]).
 prime-to-digit (2).
 prime-to-digit (3).
@@ -14,12 +18,12 @@ prime-to-digit (17).
 prime-to-digit (19).
 prime-to-digit (23).
 
-$echo "Testing square representation".
+Echo "Testing square representation".
 unconstrained.
 $fill (9, [i. square-containing ([i + 1])]).
 [square-containing (all-digits) == unconstrained? #pass | #fail].
 
-$echo "Testing constraint application".
+Echo "Testing constraint application".
 odd-square := square-containing ([1 | 3 | 5 | 7 | 9]).
 odd-square.
 even-square := square-containing ([2 | 4 | 6 | 8]).
@@ -68,7 +72,7 @@ $fill (9, [i. let {sq := digit-to-prime (i + 1)} constrain-square (sq, sq)]).
 |* i.e. at prime-numbered indexes <= 23.
 $fill (50, square-solution).
 
-$echo "Testing possibility testing".
+Echo "Testing possibility testing".
 
 square-possibilities (unconstrained).
 square-possibilities (23 * 11 * 7 * 5).
@@ -76,7 +80,7 @@ square-possibilities (3 * 2).
 square-possibilities (17).
 square-possibilities (1).
 
-$echo "Testing grid representation".
+Echo "Testing grid representation".
 
 cellsum := [cell. gather ([m, n. m + n], 0, cell)].
 grid-index-sum := $fill (81, [i. i]); cellsum.
@@ -92,17 +96,17 @@ grid-grand-sum := let { sum-cellsums := [s, e. s + cellsum (e)] }
 # gather-peers (51).
 # gather-peers (80).
 
-|.......Require #YCVDw_AO.6HLOPjtd.y38Zzrkd
+|============================================== #nxiPj8Yb.G6mO5mfB.rztCw_Vu
 
-$echo "Testing solving a blank grid".
+Echo "Testing solving a blank grid".
 try-solve (blank-grid); grid-to-string.
 
-$echo "Testing solving an impossible grid".
+Echo "Testing solving an impossible grid".
 try-solve (impossible-grid).
 
-$echo "Testing constraint-propagation-only solving".
+Echo "Testing constraint-propagation-only solving".
 try-solve (easy-grid); grid-to-string.
 try-solve (wikipedia-grid); grid-to-string.
 
-$echo "Testing backtracking solving".
+Echo "Testing backtracking solving".
 try-solve (nyt-medium-grid); grid-to-string.

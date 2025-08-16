@@ -1,7 +1,7 @@
-|.......Require #VLWBCVQ5.kSBalCkf.5Ir-lvSl
-|.......Require #P_1qZIxy.lb4GjQ8H.78bYJEfd
+|============================================== #BhXFGvON.0xoQnt6_.ylA3KXO-
+|	Require #pAgCM4Ur.ZXyMDbGg.d-FypY0M (church.lib)
 
-$echo "Testing N-Z conversion".
+Echo "Testing N-Z conversion".
 five; n2z.
 three; n2zinv.
 z0;  z2n.
@@ -11,7 +11,7 @@ z0;  abs.
 z-4; abs.
 z6;  abs.
 
-$echo "Testing 3-way sign branches".
+Echo "Testing 3-way sign branches".
 signum (one, two, three) (z5).
 signum (one, two, three) (z0).
 signum (one, two, three) (z-3).
@@ -19,7 +19,7 @@ branch (z5)  (one, two, three).
 branch (z0)  (one, two, three).
 branch (z-3) (one, two, three).
 
-$echo "Testing sign testing".
+Echo "Testing sign testing".
 z0;  z0p.
 z4;  z0p.
 z-4; z0p.
@@ -30,7 +30,7 @@ z0;  posp.
 z4;  posp.
 z-4; posp.
 
-$echo "Testing integer inverse and successor".
+Echo "Testing integer inverse and successor".
 z0;  zinv.
 z1;  zinv.
 z2;  zinv.
@@ -41,7 +41,7 @@ z-2; zsucc; zsucc.
 z-2; zsucc; zsucc; zsucc.
 z-2; zsucc; zsucc; zsucc; zsucc.
 
-$echo "Testing integer addition".
+Echo "Testing integer addition".
 zadd (z0,  z0).
 zadd (z1,  z0).
 zadd (z0,  z1).
@@ -55,7 +55,7 @@ zadd (z5,  z-8).
 zadd (z-7, z6).
 zadd (z-7, z-5).
 
-$echo "Testing integer subtraction".
+Echo "Testing integer subtraction".
 zsub (z2,  z2).
 zsub (z2,  z0).
 zsub (z4,  z2).
@@ -64,14 +64,14 @@ zsub (z-3, z-2).
 zsub (z-3, z8).
 zsub (z7,  z-10).
 
-$echo "Testing zeq".
+Echo "Testing zeq".
 zeq (z0,  z0).
 zeq (z1,  z0).
 zeq (z1,  z1).
 zeq (z-1, z-1).
 zeq (z3,  z3).
 
-$echo "Testing zlt".
+Echo "Testing zlt".
 zlt (z0,  z0).
 zlt (z0,  z1).
 zlt (z1,  z0).
@@ -84,7 +84,7 @@ zlt (z2,  z-2).
 zlt (z-4, z-4).
 zlt (z4,  z4).
 
-$echo "Testing zgt".
+Echo "Testing zgt".
 zgt (z0,  z0).
 zgt (z0,  z1).
 zgt (z1,  z0).
@@ -97,7 +97,7 @@ zgt (z2,  z-2).
 zgt (z-4, z-4).
 zgt (z4,  z4).
 
-$echo "Testing zlte".
+Echo "Testing zlte".
 zlte (z0,  z0).
 zlte (z0,  z1).
 zlte (z1,  z0).
@@ -110,7 +110,7 @@ zlte (z2,  z-2).
 zlte (z-4, z-4).
 zlte (z4,  z4).
 
-$echo "Testing zgte".
+Echo "Testing zgte".
 zgte (z0,  z0).
 zgte (z0,  z1).
 zgte (z1,  z0).
@@ -123,7 +123,7 @@ zgte (z2,  z-2).
 zgte (z-4, z-4).
 zgte (z4,  z4).
 
-$echo "Testing zmult".
+Echo "Testing zmult".
 zmult (z0,  z0).
 zmult (z3,  z0).
 zmult (z0,  z-2).
@@ -134,7 +134,7 @@ zmult (z5,  z5).
 zmult (z-2, z4).
 zmult (z-7, z-7).
 
-$echo "Testing zdiv".
+Echo "Testing zdiv".
 zdiv (z0,  z4).
 zdiv (z0,  z-3).
 zdiv (z-5, z2).

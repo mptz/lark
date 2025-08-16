@@ -1,14 +1,14 @@
-|.......Require #VLWBCVQ5.kSBalCkf.5Ir-lvSl
-|.......Require #_kFEljVo.nSiv-qVa.at4bbsgK
+|============================================== #7q8-ioYZ.8nwMpJnh.Jcuwrm1v
+|	Require #pAgCM4Ur.ZXyMDbGg.d-FypY0M (church.lib)
 
-$echo "Testing closed triples".
+Echo "Testing closed triples".
 triple	:= cons3 (eight, cons (five, two), three).
 triple; trip1.
 triple; trip2; car.
 triple; trip2; cdr.
 triple; trip3.
 
-$echo "Testing open triples".
+Echo "Testing open triples".
 ducklings := cons3 (#huey, #dewey, #louie).
 ducklings; trip1.
 ducklings; trip2.

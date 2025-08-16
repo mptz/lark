@@ -1,3 +1,5 @@
+|============================================== #P6WXY4GJ.lMA16hS4.OsJtJRYu
+
 |* Hard-to-reduce terms of various flavors.
 
 |* Tricky open term
@@ -14,6 +16,5 @@ AG12-S.
 |* Keyword vs bound vs free variable tests
 let {let := 7} let + let.
 let {let := 7} let {let := 5} let + let.
-let := #let.
-$conceal let.
+Def {Opaque} let := #let.
 let {let := let} let.

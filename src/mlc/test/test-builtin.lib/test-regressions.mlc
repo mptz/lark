@@ -3,9 +3,9 @@
 Tests to detect regressions of past bug fixes, with emphasis on subtle
 reduction issues.
 
-|:	$echo "Testing regression cases".
+|:	Echo "Testing regression cases".
 
-|____________________________________________________________Section_______
+|============================================== #G2ztH6Bt.aJ-lBx1m.ouxYaQlN
 
 This term gets stuck in the ML implementation which accompanied the
 Accattoli, Condoluci, & Sacerdoti Coen paper; the rename rule filters
@@ -16,12 +16,11 @@ is invisible to the beta-reduction steps, and we complete the R-to-L
 traversal with intact beta redexes.
 
 |:
-|:	v := #v.
-|:	$conceal v.
+|:	Def {Opaque} v := #v.
 |:	[x. x] ([y. y]) (v).
 |:
 
-|____________________________________________________________Section_______
+|============================================== #ReIAhzWX.aJ7lipO5.gVKhcl3b
 
 After implementing primitives, this broke a depth check in uncrumble
 (sometimes) and also surfaced a refcount assertion (sometimes).  I was
@@ -33,7 +32,7 @@ causing a number node to be gc'd while still in use.
 |:	[x. [y. x + y]] (5).
 |:
 
-|____________________________________________________________Section_______
+|============================================== #udbPmSp4.Uspxz_Wf.Nk6b_S-l
 
 Make sure we don't evaluate cells as though they were applications.
 This evaluated to '2' before we fixed reduction to avoid this.
@@ -42,7 +41,7 @@ This evaluated to '2' before we fixed reduction to avoid this.
 |:	[x. x + 1]; [f. [f | 1]].
 |:
 
-|____________________________________________________________Section_______
+|============================================== #EIHBK_rT.yaONsgZH.Q87UfeoY
 
 This triggered an assertion failure after moving from a lifted,
 term-based global environment to a preevaluated node-based global
@@ -56,7 +55,7 @@ panic in reduce.c.
 |:	q.
 |:
 
-|____________________________________________________________Section_______
+|============================================== #kv-znR1C.yMAg-9Bw.UGn_ke6I
 
 Another assertion failure trigger with the preevaluated global
 environment.  This time the failed assertion is in unflattening:

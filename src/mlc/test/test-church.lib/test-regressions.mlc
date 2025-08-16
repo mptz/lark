@@ -1,5 +1,5 @@
-|.......Require #VLWBCVQ5.kSBalCkf.5Ir-lvSl
-|.......Require #yPZE8iYU.OB5wLg1y.4qPVHyV1
+|============================================== #PvLGrmQv.s_7zgUW7._RDa95BD
+|	Require #pAgCM4Ur.ZXyMDbGg.d-FypY0M (church.lib)
 
 |* These are all cases which broke at some point along the way while
 |* I was struggling to get De Bruijn index shifting logic correct.
@@ -13,8 +13,6 @@ pow (one, one).
 |* And these are cases which broke when I was converting from ES/bites
 |* to nodes
 sub (two, one).
-
-|____________________________________________________________Section_______
 
 |* This case broke when I added arity; it actually revealed an existing
 |* bug in uncrumbling (using unshifted rather than shifted index for

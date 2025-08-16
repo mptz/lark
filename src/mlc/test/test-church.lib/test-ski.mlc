@@ -1,4 +1,5 @@
-|.......Require #VLWBCVQ5.kSBalCkf.5Ir-lvSl
+|============================================== #WR23L6Vk.jmggxjS5.pX4jCUMe
+|	Require #pAgCM4Ur.ZXyMDbGg.d-FypY0M (church.lib)
 
 |* Combinators for SKI combinatorial logic
 I := [x. x].
@@ -10,7 +11,7 @@ B := [x. [y. [z. z; y; x]]].
 C := [x. [y. [z. y; x (z)]]].
 W := [x. [y. y; x (y)]].
 
-$echo "Testing S, K, I combinators".
+Echo "Testing S, K, I combinators".
 I (seven).
 K (six) (three).
 
@@ -26,7 +27,7 @@ S (K) (I) (K (I) (S)).
 K (S) (I (S (K) (S) (I))).
 S (K) (I) (K).
 
-$echo "Testing B, C, W combinators".
+Echo "Testing B, C, W combinators".
 |* Pairs of lines reduce to identical normal forms
 B.
 S (S; K) (K).
@@ -41,7 +42,7 @@ S.
 B (B (W; B) (C)) (B; B).
 B (W; B) (B (B) (C)).
 
-$echo "Testing SCAM name capture case".
+Echo "Testing SCAM name capture case".
 |* This is the term which alerted me to the fact that the the paper's
 |* handling of bound variables in alpha conversion was erronous--they're
 |* not alpha-converted so we end up with inadvertant capture.  That's

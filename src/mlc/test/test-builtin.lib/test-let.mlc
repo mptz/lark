@@ -1,7 +1,9 @@
 |* Test let expressions
-|........Require #YGTjJI4S.wsVUUU0D.87x5NaKW, stuck terms
 
-$echo "Testing basic let expressions".
+|============================================== #tJILqxxe.4VuTrJwe.8wCeE2GR
+|	Require #YGTjJI4S.wsVUUU0D.87x5NaKW (stuck terms)
+
+Echo "Testing basic let expressions".
 let {x := #fail} #pass.
 let {x := #pass} x.
 let {x := 1} 1.
@@ -9,23 +11,23 @@ let {x := 1} x + x.
 let {x := 1. y := 2} x + y.
 let {id := [x. x]} id (#pass).
 
-$echo "Testing evaluation in let values".
+Echo "Testing evaluation in let values".
 let {x := 1 + 1. y := 2 + 3} [x | y].
 let {p := [[]; $is-nil? #pass | #fail]} p.
 
-$echo "Testing unevaluable let values".
+Echo "Testing unevaluable let values".
 let {x := #foo + #bar} x.
 let {x := #f (#foo). y := #g (#bar)} x + y.
 let {x := stuck} x.
 let {x := stuck} stuck2.
 
-$echo "Testing nested lets".
+Echo "Testing nested lets".
 let {x := 1. y := 10} let {z := 100. w := 1000} x + z + y + w.
 
-$echo "Testing let in various positions".
+Echo "Testing let in various positions".
 [x. x - 1] (let {y := 9} y).
 
-$echo "Testing let referencing global constants".
+Echo "Testing let referencing global constants".
 g1 := [1 | 2 | 3].
 g2 := [4 | 5].
 let {x := g1} x.
@@ -33,7 +35,7 @@ let {x := g1. y := g2} $fuse (x, y).
 let {x := g1} let {y := g2} $fuse (x, y).
 let {x := let {y := g1} y} $fuse (x, g2).
 
-$echo "Testing let conversion from nodes to term to form".
+Echo "Testing let conversion from nodes to term to form".
 Val {Surface} [_. let {x := 1} 2].
 Val {Surface} [_. let {x := 1} x].
 Val {Surface} [_. let {x := 2. y := 3} x + y].

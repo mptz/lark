@@ -1,7 +1,9 @@
 |* Test primitive string operations.
-|.......Require #YGTjJI4S.wsVUUU0D.87x5NaKW, stuck terms
 
-$echo "Testing cell primitives: ++ (string concatenation)".
+|============================================== #bcpdbIzV.KrC_BmS1.Y06vy87H
+|	Require #YGTjJI4S.wsVUUU0D.87x5NaKW (stuck terms)
+
+Echo "Testing cell primitives: ++ (string concatenation)".
 "" ++ "".
 "" ++ "" ++ "".
 "" ++ "abc".

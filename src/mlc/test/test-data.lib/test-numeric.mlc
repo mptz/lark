@@ -1,7 +1,9 @@
-|.......Require #HUQb38wS.uITYRdPK.lfJuJqm6
+|============================================== #9GLDybAx.rRjTycnM.YH3xg-vl
+|	Require #QpZfH-Lc.JKOInzrw.hGai0lc1 (data.lib)
+
 |* Test numeric operations.
 
-$echo "Testing numeric library functions".
+Echo "Testing numeric library functions".
 fib-slow (10).
 fib (30).
 $fill (30, fib).

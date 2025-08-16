@@ -1,5 +1,6 @@
-|.......Require #tzNuz8Mh.ZK1TSbod.gw_zhkMK
-|.......Require #t29ihI7k.pn_OFpk4.8F3O9QPj
+|	Require #QpZfH-Lc.JKOInzrw.hGai0lc1 (data.lib)
+
+|============================================== #eB6snnUo.9q7a9o7Z.zGV5BEKY
 
 |*
 |* Test pruning (prevention of exponential blowup) in unflattening.
@@ -39,8 +40,7 @@ constraints-list := [0 | [0 | [0 | [0 | [0 | [7 | [0 | [0 | [0 |
 	[4 | [0 | [0 | [8 | [0 | [8 | [9 | [0 | [0 | [0 | [6 | [7
 	| [3 | [0 | []]]]]]]]]]]]]]]]]]]]]]]].
 
-stuck := #stuck.
-$conceal stuck.
+Def {Opaque} stuck := #stuck.
 apply-constraints := [self! i, square, constraints.
 
 	[constraints; is-nil? square |

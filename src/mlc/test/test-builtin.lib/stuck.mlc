@@ -1,7 +1,5 @@
-|________________________________Section #YGTjJI4S.wsVUUU0D.87x5NaKW_______
+|============================================== #YGTjJI4S.wsVUUU0D.87x5NaKW
 
-|* Generate a stuck (unevaluable) term by concealing an ordinary one.
-stuck := #stuck.
-$conceal stuck.
-stuck2 := #stuck2.
-$conceal stuck2.
+|* Stuck (unevaluable) terms for use in testing.
+Def {Opaque} stuck  := #stuck.
+Def {Opaque} stuck2 := #stuck2.

@@ -1,6 +1,7 @@
-|.......Require #gKkWiF1Y.gVNNu6On.zkJY-JeC
+|============================================== #jcEVKh3S.7rvUUiCr.zGlRjebh
+|	Require #ZlhRBi0H.YYLhGOh_.UPN5VQYn (Towers of Hanoi)
 
-$echo "Testing hanoi-discs".
+Echo "Testing hanoi-discs".
 hanoi-discs (0).
 hanoi-discs (1).
 hanoi-discs (3).
