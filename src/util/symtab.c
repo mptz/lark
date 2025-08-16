@@ -36,7 +36,7 @@
 static struct hashtab the_symtab_hash;
 static struct wordbuf the_symtab_buf;
 static int symtab_initialized = 0;
-symbol_mt the_empty_symbol;
+const symbol_mt the_empty_symbol = 1;
 
 void
 symtab_dump(void)
@@ -181,7 +181,8 @@ symtab_intern(const char *name)
 			xstrdup("--- INTERNAL ERROR --- INVALID SYMBOL ---"));
 		gensym_phi = gensym_plo = stpcpy(the_gensym, "genA") - 1;
 		symtab_initialized = 1;	/* must be before recursive call */
-		the_empty_symbol = symtab_intern("");
+		symbol_mt empty = symtab_intern("");
+		assert(empty == the_empty_symbol);
 	}
 
 	size_t size = strlen(name) + 1;

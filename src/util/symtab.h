@@ -23,7 +23,7 @@
  */
 
 typedef unsigned symbol_mt;
-extern symbol_mt the_empty_symbol;
+extern const symbol_mt the_empty_symbol;
 
 extern void symtab_dump(void);
 extern symbol_mt symtab_fresh(symbol_mt prefix);
