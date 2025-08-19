@@ -132,10 +132,46 @@ function application, making chained applications easier to read.
 We've also added infix binary operators with precedence and a '_'
 placeholder for nameless arguments.
 
+We also support a 'notebook' syntax in which ordinary text need not be
+commented, and special comments mark lines containing code.  It's also
+possible to toggle between 'listing' (ordinary) and notebook modes.
+
+Pre-Evaluated Environment
+-------------------------
+
+In SLC, the global environment exists entirely outside of (and prior
+to) evaluation.  When a term referenced a global, we wrapped that term
+in an abstraction which we used to substitute the global.  If a term
+referenced N globals, we'd wrap it in N abstractions in order to be able
+to substitute in those N values.  Before installing any defined term in
+the environment, we applied this lifting transformation to ensure that
+all terms in the environment were closed.  Reduction was triggered only
+by evaluation statements, not by definitions.
+
+In MLC, we support installing already-evaluated terms in the environment.
+This allows us to perform the flattening (compilation) operation ahead
+of time.  By default, definitions perform weak/"surface" reduction rather
+than descend into abstractions and tests--though full normalization is
+an option, as is no normalization at all.
+
+We still support textual global values; such values are still handled
+via lifting, though we now use an N-ary 'let' expression rather than N
+nested abstractions to perform the substitution.  Per-constant flags
+in the environment control whether values are preevaluated (and just
+referenced), textually substituted via lifting, or not expandable at
+all--so-called "opaque" constants serve the role of free variables.
+Even if they have values, they can't be expanded into those values.
+
+Opaque constants serve the role of free variables.  SLC supports
+definition-by-mention: any variable which doesn't reference a surrounding
+abstraction or global constant is assumed to be a free variable.  Since
+this is error-prone in an production setting, MLC requires variables
+and constants be explicitly declared before use.
+
 Heap & Garbage Collection
 -------------------------
 
-Previous prototype lambda calculators (LC, SLC) managed fixed-size
+Previous prototype lambda calculators (LC, SLC) manages fixed-size
 heaps of fixed-size nodes.  MLC adds arity, so reduction nodes are
 variable-sized.  For this reason we use the C heap (malloc/free) for
 nodes, but manage allocation and garbage collection centrally.  As with
@@ -172,26 +208,57 @@ Node Listings And Debugging Features
 As we add more types of nodes and reduction functionality, the
 ability to debug at the node level rises in importance.  MLC adds
 a formatted-listing option for nodes with indentation and improved
-cross-references.  Whereas SLC used a hash table of pointers to symbols
-to provide cross-references, MLC uses a pointer arithmetic approach
+cross-references.  Whereas SLC uses a hash table of pointers to symbols
+to provide cross-references, MLC uses a pointer-arithmetic approach
 (pointer difference from baseline, encoded in alphanumeric base 62)
 which doesn't require memory allocation, reducing overhead for large
 code bases.  MLC also improves tracing features for debugging reduction,
 unflattening, and other complex operations.
 
-What's In
----------
-Notebook syntax option (comments by default, demarcated code).
-Libraries not files as a compilation unit.
-Semantic 'require' rather than textual #include.
-Namespaces based on HUIDs.
-Less-redundant lifting/on-demand global variable expansion (opaque vars).
+Libraries and Namespaces
+------------------------
 
-What's Coming
--------------
+SLC has file-level source code processing (you specify a file to the
+interpreter) and file-level, textual #include statements like C.  All
+symbols occupy a single global namespace.  These attributes aren't
+compatible with programming in the large.
 
-What's Out
-----------
-Keyword arities (arguments distinguished by keywords not position).
-Return arity (functions evaluate to multiple values).
-Type checking, dependent types: This calculus is untyped.
+Instead of files, MLC's compilation unit is the library; a library is a
+directory containing source files, all of which are processed together.
+Source code is divided into sections numbered with HUIDs; each section is
+its own namespace, and constant names don't collide unless within the same
+section.  Sections can be 'required' to bring their symbols into scope.
+Libraries can freely require other sections in the same library, but
+from outside a library one can only access sections which are 'published'.
+
+Libraries themselves are identified with HUIDs--in general the emphasis
+is on flat, global constructs with no hierarchy or privileged segments
+of the namespace.
+
+What's Left Out of MLC
+======================
+
+I've intentionally included a cluster of features which I believe need
+to be co-designed with one another, and which represent such a departure
+from SLC that MLC will lose its identity as an "industrial strength SLC".
+These are:
+
+1. A type system.
+2. Return arity (functions evaluating to multiple values).
+3. Keyword arities (arguments distinguished by keywords not position).
+
+These are listed in descending order of significance--the best argument
+for leaving out return & keyword arities is that juggling complex
+function signatures becomes error-prone in the absence of type checking.
+
+Even keyword arities, which may seem to be a simple feature on the
+surface, is tightly coupled with multiple-value constructs if we
+insist on a coherent semantics.  We might think we'd limit to only
+a single instance of each keyword in a function's call or return arity
+(indicating an error otherwise), but if we focus on the algebra of values,
+we want value combination to be associative--meaning we might combine
+two different values lists, each of which includes a certain keyword,
+and end up with two instances of that keyword.  Thus it leads to a
+more robust categorical semantics of arities if we can refer to the kth
+instance of a keyword--treating ordinary non-keyword arguments as the
+N instances of the empty keyword.
