@@ -58,7 +58,7 @@ struct node *NodeAbs(struct node *prev, int depth, struct node *body,
 		NODE_ABS : NODE_FIX;
 	struct node *node = node_alloc(variety, prev, depth, nparams);
 	node->slots[SLOT_ABS_BODY].variety = SLOT_BODY;
-	node->slots[SLOT_ABS_BODY].subst = body;
+	node->slots[SLOT_ABS_BODY].node = body;
 	for (size_t i = 1; i < nparams; ++i) {
 		node->slots[i].variety = SLOT_PARAM;
 		node->slots[i].name = params[i];
@@ -135,7 +135,7 @@ struct node *NodeSentinel(struct node *next, struct node *prev, int depth)
 
 	/* a sentinel references the first node in l-to-r order */
 	node->slots[0].variety = SLOT_SUBST;
-	node->slots[0].subst = next;
+	node->slots[0].node = next;
 	next->backref = &node->slots[0];
 	next->nref++;
 
@@ -154,7 +154,7 @@ struct node *NodeSubst(struct node *prev, int depth, struct node *subst)
 {
 	struct node *node = node_alloc(NODE_VAR, prev, depth, 1);
 	node->slots[0].variety = SLOT_SUBST;
-	node->slots[0].subst = subst;
+	node->slots[0].node = subst;
 	subst->nref++;
 	return node;
 }
@@ -185,7 +185,7 @@ void node_deref(struct node *node)
 	assert(!node->nref);
 	for (size_t i = 0; i < node->nslots; ++i) {
 		if (node->slots[i].variety == SLOT_SUBST) {
-			struct node *subst = node->slots[i].subst;
+			struct node *subst = node->slots[i].node;
 			assert(subst->nref > 0);
 			subst->nref--;
 		}
@@ -200,7 +200,7 @@ static void node_free_body(struct node *node)
 	assert(node->variety == NODE_SENTINEL);
 	assert(node->nslots == 1);
 	assert(node->slots[0].variety == SLOT_SUBST);
-	node->slots[0].subst->nref--;
+	node->slots[0].node->nref--;
 
 	/*
 	 * Then garbage-collect linked nodes.  These should all have
@@ -231,11 +231,11 @@ void node_free(struct node *node)
 	case NODE_LET:
 		/* let bodies aren't connected to chains; free here */
 		assert(node->slots[0].variety == SLOT_BODY);
-		node_free(node->slots[0].subst);
+		node_free(node->slots[0].node);
 		break;
 	case NODE_TEST:
-		node_free(node->slots[SLOT_TEST_CSQ].subst);
-		node_free(node->slots[SLOT_TEST_ALT].subst);
+		node_free(node->slots[SLOT_TEST_CSQ].node);
+		node_free(node->slots[SLOT_TEST_ALT].node);
 		break;
 	case NODE_VAL:
 		if (node->slots[0].variety == SLOT_STRING)
@@ -251,7 +251,7 @@ const struct node *node_chase_lhs(const struct node *node)
 {
 	while (node->variety == NODE_VAR &&
 	       node->slots[0].variety == SLOT_SUBST)
-		node = node->slots[0].subst;
+		node = node->slots[0].node;
 	return node;
 }
 
@@ -284,7 +284,7 @@ int node_subst_depth(const struct node *node)
 	int depth;
 	for (depth = 0; node->variety == NODE_VAR &&
 	     node->slots[0].variety == SLOT_SUBST; ++depth)
-		node = node->slots[0].subst;
+		node = node->slots[0].node;
 	return depth;
 }
 
@@ -293,7 +293,7 @@ struct node *node_take_body(struct node *abs)
 	assert(node_is_binder(abs));
 	assert(abs->variety == NODE_LET || abs->nref == 0);
 	struct node *body = node_abs_body(abs);
-	abs->slots[SLOT_ABS_BODY].subst = NULL;		/* wipe body */
+	abs->slots[SLOT_ABS_BODY].node = NULL;		/* wipe body */
 	return body;
 }
 
@@ -302,7 +302,7 @@ void node_wipe_body(struct node *abs)
 	assert(node_is_abs(abs));
 	assert(abs->nref == 0);
 	node_free(node_abs_body(abs));
-	abs->slots[SLOT_ABS_BODY].subst = NULL;		/* wipe body */
+	abs->slots[SLOT_ABS_BODY].node = NULL;		/* wipe body */
 }
 
 static void node_list_slot(struct slot slot)
@@ -319,7 +319,7 @@ static void node_list_slot(struct slot slot)
 	case SLOT_STRING:	printf("\"%s\"", slot.str); break;
 	case SLOT_SYMBOL:	printf("#%s", symtab_lookup(slot.sym)); break;
 	case SLOT_BODY: case SLOT_SUBST:
-				printf("^%s", memloc(slot.subst));
+				printf("^%s", memloc(slot.node));
 				break;
 	default:	panicf("Unhandled slot variety %d\n", slot.variety);
 	}
@@ -358,7 +358,7 @@ static void node_list(const struct node *node)
 	fputs("]\n", stdout);
 	for (size_t i = 0; i < node->nslots; ++i)
 		if (node->slots[i].variety == SLOT_BODY)
-			node_list_body(node->slots[i].subst);
+			node_list_body(node->slots[i].node);
 }
 
 void node_list_body(const struct node *node)
@@ -392,7 +392,7 @@ static void node_print_slot(struct slot slot)
 {
 	switch (slot.variety) {
 	case SLOT_BODY:		putchar('(');
-				node_print_body_contents(slot.subst);
+				node_print_body_contents(slot.node);
 				putchar(')');
 				break;
 	case SLOT_BOUND:	printf("$%d.%d", slot.bv.up, slot.bv.across);
@@ -402,7 +402,7 @@ static void node_print_slot(struct slot slot)
 	case SLOT_PRIM:		printf("'%s'", slot.prim->name); break;
 	case SLOT_STRING:	printf("\"%s\"", slot.str); break;
 	case SLOT_SYMBOL:	printf("#%s", symtab_lookup(slot.sym)); break;
-	case SLOT_SUBST:	printf("^%s", memloc(slot.subst)); break;
+	case SLOT_SUBST:	printf("^%s", memloc(slot.node)); break;
 	default:	panicf("Unhandled slot variety %d\n", slot.variety);
 	}
 }
@@ -420,9 +420,9 @@ static void node_print_contents(const struct node *node)
 		assert(node->nslots == 3);
 		node_print_slot(node->slots[0]);	/* predicate */
 		fputs("? ", stdout);
-		node_print_body_contents(node->slots[SLOT_TEST_CSQ].subst);
+		node_print_body_contents(node->slots[SLOT_TEST_CSQ].node);
 		fputs(" | ", stdout);
-		node_print_body_contents(node->slots[SLOT_TEST_ALT].subst);
+		node_print_body_contents(node->slots[SLOT_TEST_ALT].node);
 		return;
 	default:
 		/* fall through... */;

@@ -167,10 +167,10 @@ static void sanity_check_l(const struct node *node, unsigned depth)
 			panicf("Missed let-redex @%s\n", memloc(node));
 		const struct slot *slot = &node->slots[0];
 		if (node->variety == NODE_APP && slot->variety == SLOT_SUBST)
-			if (node_is_abs(node_chase_lhs(slot->subst)))
+			if (node_is_abs(node_chase_lhs(slot->node)))
 				panicf("Missed beta-redex @%s\n", memloc(node));
 		if (node->variety == NODE_TEST && slot->variety == SLOT_SUBST) {
-			const struct node *lhs = node_chase_lhs(slot->subst);
+			const struct node *lhs = node_chase_lhs(slot->node);
 			if (lhs->variety == NODE_VAL &&
 			    lhs->slots[0].variety == SLOT_NUM)
 				panicf("Missed test redex @%s\n", memloc(node));
@@ -179,7 +179,7 @@ static void sanity_check_l(const struct node *node, unsigned depth)
 		/* rename-chain terminating in value? */
 		for (size_t i = 0; i < node->nslots; ++i)
 			if (node->slots[i].variety == SLOT_SUBST &&
-			    node_subst_depth(node->slots[i].subst) > 0)
+			    node_subst_depth(node->slots[i].node) > 0)
 				panicf("Missed rename chain @%s[%zu]\n",
 					memloc(node), i);
 	}
@@ -309,9 +309,9 @@ eval_rl:
 		 * We're still not sure 'head' is a redex.  Check for a
 		 * primitive or abstraction in function position.
 		 */
-		if (node_is_prim(head->slots[0].subst))
+		if (node_is_prim(head->slots[0].node))
 			goto rule_prim;
-		if (node_is_abs(head->slots[0].subst))
+		if (node_is_abs(head->slots[0].node))
 			goto rule_beta;
 		break;
 	case NODE_CELL:
@@ -342,6 +342,20 @@ rule_move_left:
 	goto eval_rl;
 
 rule_zeta:
+	/*
+	 * For the generic do_subst below (shared with beta reduction):
+	 *	'head' is the application node, where:
+	 *		head's 0th slot is the abstraction (x below)
+	 *		head's remaining slots are the arguments
+	 *	'x' is the abstraction node, where:
+	 *		x's 0th slot is the abstraction body
+	 *		x's remaining slots are the formal parameters
+	 * In a let expression these coincide... the 0th slot is the
+	 * body of the let and the remaining elements are the arguments.
+	 * Note that this leaves no room for named formal parameters,
+	 * so any names won't be reconstructable by unflattening... but
+	 * let expressions are always redexes so that is unimportant.
+	 */
 	if (EVAL_STATS) the_eval_stats.rule_zeta++;
 	assert(head->variety == NODE_LET);
 	assert(head->slots[0].variety == SLOT_BODY);
@@ -351,7 +365,7 @@ rule_zeta:
 rule_beta:
 	if (EVAL_STATS) the_eval_stats.rule_beta++;
 	assert(head->slots[0].variety == SLOT_SUBST);
-	x = head->slots[0].subst;
+	x = head->slots[0].node;
 	assert(head->depth >= x->depth);
 	assert(node_is_abs(x));
 	assert(x->nref > 0);
@@ -412,12 +426,12 @@ do_subst:
 			 * time; this is OK since it should have acquired
 			 * two references from the self-application.
 			 */
-			slot.subst->nref--;
-			assert(slot.subst->nref >= 0);
+			slot.node->nref--;
+			assert(slot.node->nref >= 0);
 			/*
 			 * Self-application check.
 			 */
-			if (slot.subst == x)
+			if (slot.node == x)
 				y = x;
 			continue;
 		}
@@ -427,7 +441,7 @@ do_subst:
 		 * new nodes directly (as opposed to within beta-reduction).
 		 * We meet our obligations:
 		 *	- Set depth here (we leave prev NULL, however,
-		 *	  since we only intend to link these to headr
+		 *	  since we only intend to link these to head
 		 *	  if they pick up references from substitution).
 		 *	- Don't set backref, which is OK as backref is
 		 *	  only used during the renaming step of R-to-L
@@ -440,7 +454,7 @@ do_subst:
 		 *
 		 * We also mark the node as 'fresh' so that below, if
 		 * acquires references in beta-reduction, we add to it
-		 * to the environment/evaluation context via 'headr'.
+		 * to the environment/evaluation context via 'head'.
 		 */
 		assert(slot.variety == SLOT_BOUND ||
 		       slot.variety == SLOT_CONSTANT);
@@ -448,7 +462,7 @@ do_subst:
 			NodeBoundVar(NULL, depth, slot.bv.up, slot.bv.across) :
 			NodeConstant(NULL, depth, slot.index);
 		node->isfresh = true;
-		head->slots[i].subst = node;
+		head->slots[i].node = node;
 		head->slots[i].variety = SLOT_SUBST;
 	}
 				
@@ -470,8 +484,9 @@ do_subst:
 	 * but might increase as we substitute x for a bound variable
 	 * in its own body.  In that case, copy instead.
 	 *
-	 * XXX add comment about head == x for lets, verify & look for
-	 * cleanups.
+	 * If head == x, we're substituting in a let expression, in
+	 * which no self-reference is possible so we can always move
+	 * rather than copy.
 	 */
 	assert(head->depth == depth);
 	assert(head->depth >= x->depth);
@@ -499,7 +514,7 @@ do_subst:
 	 */
 	for (size_t i = 1; i < y->nslots; ++i) {
 		assert(y->slots[i].variety == SLOT_SUBST);
-		struct node *arg = y->slots[i].subst;
+		struct node *arg = y->slots[i].node;
 		if (arg->isfresh) {
 			/*
 			 * arg is a node which we allocated above; we know
@@ -535,7 +550,7 @@ do_subst:
 			 * reduction, we can free its body right away
 			 * rather than waiting for L-to-R garbage collection.
 			 * We can't free the node itself since it's linked
-			 * by headr at this level or at a lower abstraction
+			 * by head at this level or at a lower abstraction
 			 * depth; that will have to wait for L-to-R gc.
 			 * Freeing the body is usually a bigger win,
 			 * however--possibly a *much* bigger win.
@@ -569,7 +584,7 @@ rule_prim:
 	 */
 	assert(head->nslots);
 	assert(head->slots[0].variety == SLOT_SUBST);
-	x = head->slots[0].subst;
+	x = head->slots[0].node;
 	assert(node_is_prim(x));
 	assert(x->nslots == 1);
 	assert(x->slots[0].prim->reduce);
@@ -608,8 +623,8 @@ rule_rename:
 	assert(head->nslots == 1);
 	assert(head->slots[0].variety == SLOT_SUBST);
 	assert(head->backref);
-	assert(head->backref->subst == head);
-	head->backref->subst = head->slots[0].subst;	/* snap ref */
+	assert(head->backref->node == head);
+	head->backref->node = head->slots[0].node;	/* snap ref */
 	head->nref--;			/* since parent ref redirected */
 	x = head, head = head->prev;	/* store head & move left */
 	node_remove(x), node_free(x);	/* dispose of rename node */
@@ -628,21 +643,21 @@ rule_test:
 	 * number is nonzero, replace the test with the consequent;
 	 * otherwise replace the test with the alternative.
 	 */
-	x = head->slots[SLOT_TEST_PRED].subst;
+	x = head->slots[SLOT_TEST_PRED].node;
 	if (x->nslots != 1 || x->slots[0].variety != SLOT_NUM)
 		goto rule_move_left;
 
 	x->nref--;			/* predicate is consumed */
 	if (x->slots[0].num) {
 		/* consequent branch */
-		x = head->slots[SLOT_TEST_CSQ].subst->next;
-		y = head->slots[SLOT_TEST_CSQ].subst->prev;
-		node_pinch(head->slots[SLOT_TEST_CSQ].subst);
+		x = head->slots[SLOT_TEST_CSQ].node->next;
+		y = head->slots[SLOT_TEST_CSQ].node->prev;
+		node_pinch(head->slots[SLOT_TEST_CSQ].node);
 	} else {
 		/* alternative branch */
-		x = head->slots[SLOT_TEST_ALT].subst->next;
-		y = head->slots[SLOT_TEST_ALT].subst->prev;
-		node_pinch(head->slots[SLOT_TEST_ALT].subst);
+		x = head->slots[SLOT_TEST_ALT].node->next;
+		y = head->slots[SLOT_TEST_ALT].node->prev;
+		node_pinch(head->slots[SLOT_TEST_ALT].node);
 	}
 
 	/*
@@ -654,7 +669,7 @@ rule_test:
 	 */
 	assert(head->backref);
 	x->backref = head->backref;
-	x->backref->subst = x;
+	x->backref->node = x;
 	assert(head->nref == 1);
 	assert(x->nref == 1);
 	head->nref--;
@@ -714,11 +729,11 @@ rule_move_up:
 	case NODE_FIX:
 		goto rule_exit_abs;
 	case NODE_TEST:
-		if (outer->slots[SLOT_TEST_CSQ].subst == head) {
+		if (outer->slots[SLOT_TEST_CSQ].node == head) {
 			if (TRACE_EVAL)
 				printf("move_up[+%u]: csq ==> alt @%s\n",
 				       depth, memloc(outer));
-			head = outer->slots[SLOT_TEST_ALT].subst;
+			head = outer->slots[SLOT_TEST_ALT].node;
 			goto eval_body;
 		}
 		goto rule_exit_test;
@@ -781,7 +796,7 @@ rule_enter_test:
 	assert(head->nref);
 
 	head->outer = outer, outer = head;		/* push outer */
-	head = head->slots[SLOT_TEST_CSQ].subst;	/* load body sentinel */
+	head = head->slots[SLOT_TEST_CSQ].node;		/* load body sentinel */
 	goto eval_body;
 
 rule_exit_test:

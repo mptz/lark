@@ -57,8 +57,7 @@ struct slot {
 		double num;			/* floating-point number */
 		const struct prim *prim;	/* primitive function */
 		const char *str;		/* nul-terminated string */
-		struct node *subst;		/* body, extern, subst */
-						/* XXX rename to node? */
+		struct node *node;		/* body, extern, subst */
 		symbol_mt sym;			/* self-evaluating symbol */
 	};
 };
@@ -67,7 +66,9 @@ struct slot {
  * We essentially support three types of references: bound variables,
  * constants, and substitutions (pointers to nodes).  Application
  * nodes contain only references of these types--they don't directly
- * contain values (at present).  XXX explore for atomics.
+ * contain values (at present).  They could validly contain other
+ * things which aren't useful to share (atomics, references to global
+ * constants) but we're holding off from that complexity for now.
  */
 static inline bool slot_is_ref(const struct slot slot)
 	{ return slot.variety == SLOT_BOUND ||
@@ -142,11 +143,11 @@ static inline bool node_is_binder(const struct node *node)
 static inline bool node_is_prim(const struct node *node)
 	{ return node->slots[0].variety == SLOT_PRIM; }
 static inline struct node *node_abs_body(const struct node *abs)
-	{ return abs->slots[SLOT_ABS_BODY].subst; }
+	{ return abs->slots[SLOT_ABS_BODY].node; }
 static inline size_t node_app_nargs(const struct node *app)
 	{ return app->nslots - 1; }
 static inline struct node *node_binder_body(const struct node *node)
-	{ return node->slots[SLOT_BINDER_BODY].subst; }
+	{ return node->slots[SLOT_BINDER_BODY].node; }
 static inline bool done(const struct node *node)
 	{ return node->variety == NODE_SENTINEL; }
 static inline void node_pinch(struct node *node)

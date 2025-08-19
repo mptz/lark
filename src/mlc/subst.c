@@ -132,9 +132,9 @@ copy_bv(int up, int across, int height, const struct subst *subst)
 		 */
 		assert(subst->vals->nslots > across);
 		assert(subst->vals->slots[across].variety == SLOT_SUBST);
-		struct node *ref = subst->vals->slots[across].subst;
+		struct node *ref = subst->vals->slots[across].node;
 		ref->nref++;
-		return (struct slot) { .variety = SLOT_SUBST, .subst = ref };
+		return (struct slot) { .variety = SLOT_SUBST, .node = ref };
 	}
 
 	/*
@@ -150,7 +150,7 @@ copy_bv(int up, int across, int height, const struct subst *subst)
 
 static unsigned copy_subst(struct slot *copy, const struct slot src)
 {
-	struct node *target = src.subst;
+	struct node *target = src.node;
 	if (target->forward) {
 		/*
 		 * Note that backref points to the actual slot in an
@@ -178,7 +178,7 @@ static unsigned copy_subst(struct slot *copy, const struct slot src)
 	 * a mock GC implementation.
 	 */
 	target->nref++;
-	copy->subst = target;
+	copy->node = target;
 	return SLOT_SUBST;
 }
 
@@ -197,9 +197,9 @@ static struct node *copy_slots(struct node *copy, const struct node *src,
 		case SLOT_BODY: {
 			int bvar = var + !!node_is_binder(src);
 			struct node_chain chain =
-				copy_body(src->slots[i].subst, bvar, subst);
+				copy_body(src->slots[i].node, bvar, subst);
 			copy->slots[i].variety = SLOT_BODY;
-			copy->slots[i].subst = NodeSentinel(
+			copy->slots[i].node = NodeSentinel(
 				chain.next, chain.prev,
 				subst->basedepth + bvar /* depth */);
 			break;
@@ -285,7 +285,7 @@ static void edit_node(struct node *src, int var, struct subst *subst)
 	for (size_t i = src->nslots; i--; /* nada */) {
 		struct slot *slot = &src->slots[i];
 		if (slot->variety == SLOT_BODY) {
-			edit_body(slot->subst, var + !!node_is_binder(src),
+			edit_body(slot->node, var + !!node_is_binder(src),
 				  subst);
 		} else if (slot->variety == SLOT_BOUND) {
 			src->slots[i] = copy_bv(slot->bv.up, slot->bv.across,

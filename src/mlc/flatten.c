@@ -42,7 +42,7 @@ static struct node *constant_of(const struct term *term)
 	assert(n->variety == NODE_SENTINEL);
 	assert(n->nref == 0);
 	assert(n->backref == NULL);
-	n = n->slots[0].subst;
+	n = n->slots[0].node;
 
 	/*
 	 * Note that n's predecessor, n->prev, may not be the same term
@@ -129,7 +129,7 @@ static struct slot_and_prev {
 		for (struct node *k = constant_of(term); k->nref++; /* nada */)
 			return (struct slot_and_prev) {
 				.slot.variety = SLOT_SUBST,
-				.slot.subst = k,
+				.slot.node = k,
 				.prev = prev,
 			};
 	case TERM_VAR:
@@ -162,7 +162,7 @@ static struct slot_and_prev {
 	assert(chain.prev != prev);
 	return (struct slot_and_prev) {
 		.slot.variety = SLOT_SUBST,
-		.slot.subst = chain.next,
+		.slot.node = chain.next,
 		.prev = chain.prev,
 	};
 }
@@ -174,7 +174,7 @@ static struct slot_and_prev {
 static inline bool
 is_fresh_subst(const struct slot slot)
 {
-	return slot.variety == SLOT_SUBST && slot.subst->nref == 0;
+	return slot.variety == SLOT_SUBST && slot.node->nref == 0;
 }
 
 static struct node_chain
@@ -224,8 +224,8 @@ flatten_term(const struct term *term, struct node *prev, unsigned depth)
 				i == 0 ? term->app.fun : term->app.args[i-1],
 				sap.prev, depth);
 			if (is_fresh_subst(sap.slot)) {
-				sap.slot.subst->nref = 1;
-				sap.slot.subst->backref = &prev->slots[i];
+				sap.slot.node->nref = 1;
+				sap.slot.node->backref = &prev->slots[i];
 			}
 			prev->slots[i] = sap.slot;
 		}
@@ -244,8 +244,8 @@ flatten_term(const struct term *term, struct node *prev, unsigned depth)
 			sap = flatten_hoist(
 				term->cell.elts[i], sap.prev, depth);
 			if (is_fresh_subst(sap.slot)) {
-				sap.slot.subst->nref = 1;
-				sap.slot.subst->backref = &prev->slots[i];
+				sap.slot.node->nref = 1;
+				sap.slot.node->backref = &prev->slots[i];
 			}
 			prev->slots[i] = sap.slot;
 		}
@@ -270,14 +270,14 @@ flatten_term(const struct term *term, struct node *prev, unsigned depth)
 		retval.next = prev = NodeLet(prev, depth, term->let.ndefs);
 		assert(prev->nslots);
 		prev->slots[0].variety = SLOT_BODY;
-		prev->slots[0].subst = flatten_chain(term->let.body, depth + 1);
+		prev->slots[0].node = flatten_chain(term->let.body, depth + 1);
 		struct slot_and_prev sap = { .prev = prev };
 		for (size_t i = 1; i < term->let.ndefs; ++i) {
 			sap = flatten_hoist(
 				term->let.vals[i], sap.prev, depth);
 			if (is_fresh_subst(sap.slot)) {
-				sap.slot.subst->nref = 1;
-				sap.slot.subst->backref = &prev->slots[i];
+				sap.slot.node->nref = 1;
+				sap.slot.node->backref = &prev->slots[i];
 			}
 			prev->slots[i] = sap.slot;
 		}
@@ -312,8 +312,8 @@ flatten_term(const struct term *term, struct node *prev, unsigned depth)
 		struct slot_and_prev sap =
 			flatten_hoist(term->test.pred, prev, depth);
 		if (is_fresh_subst(sap.slot)) {
-			sap.slot.subst->nref = 1;
-			sap.slot.subst->backref = &retval.next->slots[0];
+			sap.slot.node->nref = 1;
+			sap.slot.node->backref = &retval.next->slots[0];
 		}
 		retval.next->slots[SLOT_TEST_PRED] = sap.slot;
 		retval.prev = sap.prev;
@@ -328,10 +328,10 @@ flatten_term(const struct term *term, struct node *prev, unsigned depth)
 		 * since tests lack a name-binding construct.
 		 */
 		assert(term->test.ncsqs == 1);
-		retval.next->slots[SLOT_TEST_CSQ].subst =
+		retval.next->slots[SLOT_TEST_CSQ].node =
 			flatten_chain(term->test.csqs[0], depth);
 		assert(term->test.nalts == 1);
-		retval.next->slots[SLOT_TEST_ALT].subst =
+		retval.next->slots[SLOT_TEST_ALT].node =
 			flatten_chain(term->test.alts[0], depth);
 		break;
 	}

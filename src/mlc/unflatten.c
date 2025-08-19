@@ -225,7 +225,7 @@ static struct term *unflatten_body(const struct node *node, int cutoff,
 	assert(node->variety == NODE_SENTINEL);
 	assert(node->nslots == 1);
 	assert(node->slots[0].variety == SLOT_SUBST);
-	return unflatten_subst(node->slots[0].subst, node->depth, cutoff,
+	return unflatten_subst(node->slots[0].node, node->depth, cutoff,
 			       context, shift, unshare);
 }
 
@@ -269,7 +269,7 @@ static struct term *unflatten_let(const struct node *node, int cutoff,
 
 	assert(node->nslots);
 	assert(node->slots[0].variety == SLOT_BODY);
-	struct node *body = node->slots[0].subst;
+	struct node *body = node->slots[0].node;
 	assert(body->variety == NODE_SENTINEL);
 	assert(body->depth == node->depth + 1);
 
@@ -298,7 +298,7 @@ static struct term *unflatten_slot(struct slot slot, int depth, int cutoff,
 {
 	switch (slot.variety) {
 	case SLOT_BODY:
-		return unflatten_body(slot.subst, cutoff, context,
+		return unflatten_body(slot.node, cutoff, context,
 				      shift, unshare);
 	case SLOT_BOUND: {
 		shift->cutoff = cutoff;
@@ -322,7 +322,7 @@ static struct term *unflatten_slot(struct slot slot, int depth, int cutoff,
 	}
 
 	assert(slot.variety == SLOT_SUBST);
-	return unflatten_subst(slot.subst, depth, cutoff,
+	return unflatten_subst(slot.node, depth, cutoff,
 			       context, shift, unshare);
 }
 

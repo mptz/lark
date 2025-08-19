@@ -150,7 +150,7 @@ static void sanity_check_reduction(const struct node *node)
 	assert(node->variety == NODE_SENTINEL);
 	assert(node->nslots == 1);
 	assert(node->slots[0].variety == SLOT_SUBST);
-	assert(node->slots[0].subst->nref > 0);
+	assert(node->slots[0].node->nref > 0);
 
 	/*
 	 * If the sentinel's substitution doesn't point to the leftmost
@@ -159,7 +159,7 @@ static void sanity_check_reduction(const struct node *node)
 	 * variable.  In this case this node's linked list should have
 	 * been fully garbage collected.
 	 */
-	if (node->next != node->slots[0].subst) {
+	if (node->next != node->slots[0].node) {
 		assert(node->next == node->prev);
 		assert(node->next == node);
 	}

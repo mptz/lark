@@ -41,7 +41,7 @@ replace_redex(struct node *redex, struct node *next, struct node *prev)
 	/* backref and references */
 	assert(redex->backref);
 	next->backref = redex->backref;
-	next->backref->subst = next;
+	next->backref->node = next;
 	assert(redex->nref == 1);
 	next->nref = redex->nref;
 	redex->nref--;

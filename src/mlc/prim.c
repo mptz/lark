@@ -73,10 +73,10 @@ prim_replace_redex(struct node *redex, struct node *val)
 {
 	assert(redex->nref == 1);
 	assert(redex->backref);
-	assert(redex->backref->subst == redex);
+	assert(redex->backref->node == redex);
 	assert(val->nref == 0);
 	val->backref = redex->backref;
-	val->backref->subst = val;
+	val->backref->node = val;
 	redex->nref--, val->nref++;
 
 	node_replace(val, redex);
@@ -107,7 +107,7 @@ prim_return_var(struct node *redex, struct slot var)
 	 * reference count to reflect the new sharing.
 	 */
 	assert(slot_is_ref(var));
-	if (var.variety == SLOT_SUBST) var.subst->nref++;
+	if (var.variety == SLOT_SUBST) var.node->nref++;
 
 	assert(redex->nref == 1);
 	assert(redex->backref);
@@ -123,7 +123,7 @@ prim_return_var(struct node *redex, struct slot var)
 static bool known(const struct node *redex, size_t i, struct node **arg)
 {
 	if (i < redex->nslots && redex->slots[i].variety == SLOT_SUBST) {
-		*arg = redex->slots[i].subst;
+		*arg = redex->slots[i].node;
 		return true;
 	}
 	return false;
@@ -134,7 +134,7 @@ static bool known_cell(const struct node *redex, size_t i, struct node **cell)
 	struct node *arg;
 	if (i < redex->nslots &&
 	    redex->slots[i].variety == SLOT_SUBST &&
-	    (arg = redex->slots[i].subst)->variety == NODE_CELL) {
+	    (arg = redex->slots[i].node)->variety == NODE_CELL) {
 		*cell = arg;
 		return true;
 	}
@@ -146,7 +146,7 @@ static bool known_num(const struct node *redex, size_t i, double *num)
 	struct node *arg;
 	if (i < redex->nslots &&
 	    redex->slots[i].variety == SLOT_SUBST &&
-	    (arg = redex->slots[i].subst)->nslots == 1 &&
+	    (arg = redex->slots[i].node)->nslots == 1 &&
 	    arg->slots[0].variety == SLOT_NUM) {
 		assert(arg->variety == NODE_VAL);
 		*num = arg->slots[0].num;
@@ -160,7 +160,7 @@ static bool known_string(const struct node *redex, size_t i, const char **str)
 	struct node *arg;
 	if (i < redex->nslots &&
 	    redex->slots[i].variety == SLOT_SUBST &&
-	    (arg = redex->slots[i].subst)->nslots == 1 &&
+	    (arg = redex->slots[i].node)->nslots == 1 &&
 	    arg->slots[0].variety == SLOT_STRING) {
 		assert(arg->variety == NODE_VAL);
 		*str = arg->slots[0].str;
@@ -241,7 +241,7 @@ static struct node *prim_reduce_cell(unsigned variety, struct node *redex)
 		return redex->prev;
 	if (nelems < 0) panic("Negative cell size!\n");
 	struct slot k = redex->slots[2];
-	if (k.variety == SLOT_SUBST) k.subst->nref += nelems;
+	if (k.variety == SLOT_SUBST) k.node->nref += nelems;
 
 	/* could hypothetically recycle in some cases */
 	struct node *cell = NodeCell(redex->prev, redex->depth, nelems);
@@ -269,7 +269,7 @@ static struct node *prim_reduce_fill(unsigned variety, struct node *redex)
 		known_num(redex, 1, &nelems)))
 		return redex->prev;
 	struct slot fn = redex->slots[2];
-	if (fn.variety == SLOT_SUBST) fn.subst->nref += nelems;
+	if (fn.variety == SLOT_SUBST) fn.node->nref += nelems;
 
 	/*
  	 * Technically we don't need to allocate unless the size of the
@@ -289,7 +289,7 @@ static struct node *prim_reduce_fill(unsigned variety, struct node *redex)
 
 		/* connect cell to application */
 		cell->slots[i].variety = SLOT_SUBST;
-		cell->slots[i].subst = app;
+		cell->slots[i].node = app;
 		app->backref = &cell->slots[i];
 		app->nref++;
 
@@ -299,7 +299,7 @@ static struct node *prim_reduce_fill(unsigned variety, struct node *redex)
 
 		/* connect application to argument */
 		app->slots[1].variety = SLOT_SUBST;
-		app->slots[1].subst = arg;
+		app->slots[1].node = arg;
 		arg->backref = &app->slots[1];
 		arg->nref++;
 	}
@@ -309,9 +309,9 @@ static struct node *prim_reduce_fill(unsigned variety, struct node *redex)
 	 */
 	assert(redex->nref == 1);
 	assert(redex->backref);
-	assert(redex->backref->subst == redex);
+	assert(redex->backref->node == redex);
 	cell->backref = redex->backref;
-	cell->backref->subst = cell;
+	cell->backref->node = cell;
 	redex->nref--, cell->nref++;
 
 	/*
@@ -338,10 +338,10 @@ static struct node *prim_reduce_find(unsigned variety, struct node *redex)
 	size_t i;
 	for (i = 0; i < cell->nslots; ++i)
 		if (cell->slots[i].variety == SLOT_SUBST &&
-		    cell->slots[i].subst->variety == NODE_VAL &&
-		    cell->slots[i].subst->nslots == 1 &&
-		    cell->slots[i].subst->slots[0].variety == SLOT_NUM &&
-		    cell->slots[i].subst->slots[0].num == arg)
+		    cell->slots[i].node->variety == NODE_VAL &&
+		    cell->slots[i].node->nslots == 1 &&
+		    cell->slots[i].node->slots[0].variety == SLOT_NUM &&
+		    cell->slots[i].node->slots[0].num == arg)
 			break;
 	val = i == cell->nslots ? -1.0 : i;
 	return prim_return_val(redex, (struct slot) { .variety = SLOT_NUM,
@@ -382,12 +382,12 @@ static struct node *prim_reduce_fuse(unsigned variety, struct node *redex)
 	for (size_t j = 0; j < cell0->nslots; ++i, ++j) {
 		cell->slots[i] = cell0->slots[j];
 		if (cell->slots[i].variety == SLOT_SUBST)
-			cell->slots[i].subst->nref++;
+			cell->slots[i].node->nref++;
 	}
 	for (size_t j = 0; j < cell1->nslots; ++i, ++j) {
 		cell->slots[i] = cell1->slots[j];
 		if (cell->slots[i].variety == SLOT_SUBST)
-			cell->slots[i].subst->nref++;
+			cell->slots[i].node->nref++;
 	}
 	assert(i == nslots);
 
@@ -396,9 +396,9 @@ static struct node *prim_reduce_fuse(unsigned variety, struct node *redex)
 	 */
 	assert(redex->nref == 1);
 	assert(redex->backref);
-	assert(redex->backref->subst == redex);
+	assert(redex->backref->node == redex);
 	cell->backref = redex->backref;
-	cell->backref->subst = cell;
+	cell->backref->node = cell;
 	redex->nref--, cell->nref++;
 
 	/*
