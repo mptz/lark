@@ -83,7 +83,7 @@ static unsigned random_magnitude(void)
 
 static void usage(void)
 {
-	fprintf(stderr, "Usage: bignumtest -[asmdr]\n");
+	fprintf(stderr, "Usage: bignumtest -[asmdrc]\n");
 	exit(EXIT_FAILURE);
 }
 
@@ -115,7 +115,7 @@ int main(int argc, char *argv[])
 		case 'c':	op = OpCmp; break;
 		}
 	}
-	if (optind != argc)
+	if (optind != argc || op == OpInvalid)
 		usage();
 
 	unsigned n = 100;
