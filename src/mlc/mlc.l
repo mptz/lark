@@ -451,7 +451,7 @@ static const char *lexstr(struct bytebuf *buf)
 static int scanerr(int lineno, const char *msg, const char *text)
 {
 	/*
-	 * XXX here and elsewhere we should look into the ramifications
+	 * TODO: here and elsewhere we should look into the ramifications
 	 * of $undefined/YYUNDEF vs YYerror.  Perhaps once error handling
 	 * in the parser is further along.
 	 */
