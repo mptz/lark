@@ -59,10 +59,7 @@ struct wordtab;
 extern void env_init(void);
 extern void env_dump(const char *substr);
 extern const struct binder *env_at(size_t index);
-extern struct binder *env_define(symbol_mt name, symbol_mt space,
-				 struct node *val);
-extern struct binder *env_install(symbol_mt name, symbol_mt space,
-				  struct term *term);
+extern struct binder *env_bind(symbol_mt name, symbol_mt space);
 extern struct binder *env_lookup(symbol_mt name, const struct wordtab *spaces);
 extern bool env_test(symbol_mt name);
 

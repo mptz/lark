@@ -469,13 +469,10 @@ void node_print_after(const struct node *node)
 
 void node_print_until(const struct node *node)
 {
-	/* XXX this is inelegant */
-	if (done(node)) return;
 	const struct node *curr;
+
 	for (curr = node; !done(curr); curr = curr->prev);
 	assert(curr->variety == NODE_SENTINEL);
-	do {
-		curr = curr->next;
+	for (curr = curr->next; curr != node->next; curr = curr->next)
 		node_print(curr);
-	} while (curr != node);
 }

@@ -58,7 +58,8 @@ void env_init(void)
 	dummy->index = 0;
 	dummy->name = name;
 	dummy->space = symtab_intern("8CzDnhVz.I1KxfudP.bDbC38_S");
-	dummy->val = NULL;
+	dummy->term = NULL;
+	dummy->node = NULL;
 	dummy->flags = BINDING_OPAQUE;
 	wordbuf_push(&global_env_by_index, (word) dummy);
 }
@@ -84,36 +85,10 @@ void env_dump(const char *substr)
 			fputs("$opaque", stdout);
 		else if (binder->term)
 			term_print(binder->term);
-		else if (binder->val)
-			node_print_body(binder->val);
+		else if (binder->node)
+			node_print_body(binder->node);
 		putchar('\n');
 	}
-}
-
-static struct binder *env_put(symbol_mt name, symbol_mt space,
-			      struct term *term, struct node *val,
-			      unsigned flags, struct wordbuf *slot)
-{
-	assert(name != the_empty_symbol);
-	assert(space != the_empty_symbol);
-
-	if (term) {
-		assert(flags & BINDING_LIFTING);
-		assert(!val);
-	} else
-		assert(!term);
-
-	struct binder *binder = xmalloc(sizeof *binder);
-	binder->index = wordbuf_used(&global_env_by_index);
-	binder->name = name;
-	binder->space = space;
-	binder->term = term;
-	binder->val = val;
-	binder->flags = flags;
-
-	wordbuf_push(&global_env_by_index, (word) binder);
-	wordbuf_push(slot, (word) binder);
-	return binder;
 }
 
 /*
@@ -149,21 +124,25 @@ static struct wordbuf *env_slot(symbol_mt name)
 }
 
 /*
- * Defining a variable fails if it's already defined in the current
- * namespace.  Unlike with declarations, other namespaces aren't relevant.
+ * Binding a variable fails if it's already bound in the current namespace.
  */
-struct binder *env_define(symbol_mt name, symbol_mt space, struct node *val)
+struct binder *env_bind(symbol_mt name, symbol_mt space)
 {
 	struct wordbuf *slot = env_slot(name);
 	if (!env_name_is_available(name, space, slot)) return NULL;
-	return env_put(name, space, NULL, val, BINDING_DEFAULT, slot);
-}
 
-struct binder *env_install(symbol_mt name, symbol_mt space, struct term *term)
-{
-	struct wordbuf *slot = env_slot(name);
-	if (!env_name_is_available(name, space, slot)) return NULL;
-	return env_put(name, space, term, NULL, BINDING_LIFTING, slot);
+	assert(name != the_empty_symbol);
+	assert(space != the_empty_symbol);
+
+	struct binder *binder = xmalloc(sizeof *binder);
+	binder->index = wordbuf_used(&global_env_by_index);
+	binder->name = name;
+	binder->space = space;
+	binder->flags = BINDING_DEFAULT;
+
+	wordbuf_push(&global_env_by_index, (word) binder);
+	wordbuf_push(slot, (word) binder);
+	return binder;
 }
 
 struct binder *env_lookup(symbol_mt name, const struct wordtab *spaces)

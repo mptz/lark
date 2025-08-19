@@ -56,7 +56,7 @@
  */
 #define YY_USER_INIT do {					\
 		yylloc->first_line = yylloc->last_line = 1;	\
-		BEGIN(yyextra->repl ? sc_listing : sc_header );	\
+		BEGIN(yyextra->repl ? sc_listing : sc_header);	\
 	} while (0);
 
 /*
@@ -323,6 +323,12 @@ void mlc_scan_init_raw(struct scanner_state *scanner)
 	yyset_extra(scanner, scanner->flexstate);
 	bytebuf_init(&scanner->strbuf);
 	scanner->mode = sc_listing;
+	scanner->repl = 0;
+}
+
+void mlc_scan_init_repl(struct scanner_state *scanner)
+{
+	mlc_scan_init_raw(scanner);
 	scanner->repl = 0;
 }
 

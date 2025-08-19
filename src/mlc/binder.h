@@ -113,7 +113,7 @@ struct binder {
 	size_t index;
 	symbol_mt name, space;
 	struct term *term;
-	struct node *val;
+	struct node *node;
 	unsigned flags;
 };
 

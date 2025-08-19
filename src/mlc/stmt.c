@@ -211,19 +211,22 @@ static int stmt_define(symbol_mt name, struct form *form, unsigned flags)
 		 * in the environment as a term constant.  Referencing this
 		 * constant will trigger lifting.
 		 */
-		binder = env_install(name, space, body);
+		binder = env_bind(name, space);
 		if (!binder) {
 			errf("Failed to define '%s'\n", symtab_lookup(name));
 			return -1;
 		}
+		binder->term = body;
+		binder->flags = BINDING_LIFTING;
 		goto apply_flags;
 	}
 
 	struct node *node = do_flatten(body);
 
-	/* XXX should have option for this? */
-	reset_eval_stats();
-	reset_heap_stats();
+	if (!cumulative_stats_setting) {
+		reset_eval_stats();
+		reset_heap_stats();
+	}
 
 	if (!(flags & BINDING_LITERAL)) {
 		node = timed_reduction(node, (flags & BINDING_DEEP) ?
@@ -235,12 +238,13 @@ static int stmt_define(symbol_mt name, struct form *form, unsigned flags)
 		print_heap_stats();
 	}
 
-	binder = env_define(name, space, node);
+	binder = env_bind(name, space);
 	node_heap_baseline();
 	if (!binder) {
 		errf("Failed to define '%s'\n", symtab_lookup(name));
 		return -1;
 	}
+	binder->node = node;
 
 apply_flags:
 	assert(binder);
@@ -249,19 +253,20 @@ apply_flags:
 	return 0;
 }
 
-static void stmt_reduce(struct form *form, unsigned flags)
+static int stmt_reduce(struct form *form, unsigned flags)
 {
 	form_labeled_print("form", form);
 
 	struct term *term = resolve(form);
-	if (!term) return;	/* error already printed */
+	if (!term) return -1;	/* error already printed */
 	if (!quiet_setting) term_labeled_print("term", term);
 
 	struct node *node = do_flatten(term);
 
-	/* XXX should have option for this? */
-	reset_eval_stats();
-	reset_heap_stats();
+	if (!cumulative_stats_setting) {
+		reset_eval_stats();
+		reset_heap_stats();
+	}
 
 	/*
 	 * Map flags to a reduction strategy (messy, since bindings
@@ -288,6 +293,7 @@ static void stmt_reduce(struct form *form, unsigned flags)
 	}
 	fputs("==================================="
 	      "===================================\n", stdout);
+	return 0;
 }
 
 int stmt_eval(const struct stmt *stmt)
@@ -297,12 +303,10 @@ int stmt_eval(const struct stmt *stmt)
 		return stmt_define(stmt->def.var->var.name, stmt->def.val,
 				   stmt->def.flags);
 	case STMT_ECHO:
-		fputs(stmt->form->str, stdout);
-		putchar('\n');
+		printf("%s\n", stmt->form->str);
 		return 0;
 	case STMT_VAL:
-		stmt_reduce(stmt->val.val, stmt->val.flags);
-		return 0;
+		return stmt_reduce(stmt->val.val, stmt->val.flags);
 	default: panicf("Unhandled stmt variety %d\n", stmt->variety);
 	}
 }

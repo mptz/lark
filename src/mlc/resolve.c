@@ -143,7 +143,7 @@ static struct term *lift(struct term *term, const struct wordtab *refs)
 	for (size_t i = nrefs; i--; /* nada */) {
 		const struct binder *binder = (void*) wordbuf_at(&wb, i);
 		assert(binder->term);
-		assert(!binder->val);
+		assert(!binder->node);
 		assert(binder->flags & BINDING_LIFTING);
 		vars[i+1] = binder->name;
 		vals[i+1] = binder->term;

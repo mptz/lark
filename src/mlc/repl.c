@@ -67,8 +67,7 @@ int repl_line(const char *line, int lineno)
 	struct scanner_state scanner;
 	mlc_yypstate *parser;
 
-	mlc_scan_init_raw(&scanner);
-	scanner.repl = 1;		/* XXX convoluted */
+	mlc_scan_init_repl(&scanner);
 	mlc_scan_string(line, &scanner, lineno);
 	parser = mlc_yypstate_new();
 	assert(parser);

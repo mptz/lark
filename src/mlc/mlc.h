@@ -27,6 +27,7 @@
 extern symbol_mt the_placeholder_symbol;	/* "_" */
 extern symbol_mt the_undefined_symbol;
 
+extern int cumulative_stats_setting;
 extern int listing_setting;
 extern int quiet_setting;
 extern int mlc_yydebug;

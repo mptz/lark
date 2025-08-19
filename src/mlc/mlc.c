@@ -45,6 +45,7 @@
 symbol_mt the_placeholder_symbol;
 symbol_mt the_undefined_symbol;
 
+int cumulative_stats_setting = 0;
 int listing_setting = 0;
 int quiet_setting = 0;
 int trace_unflatten = 0;
@@ -85,6 +86,7 @@ static void usage(void)
 	"        => start an interactive REPL, if on a terminal;\n"
 	"        => read from standard input, otherwise.\n"
 	"Options:\n"
+	"        -C              Cumulative reduction statistics\n"
 	"        -f              Formatted, multi-line listings\n"
 	"        -l <pathname>   Load the given library "
 					"(may be given more than once)\n"
@@ -107,8 +109,9 @@ int main(int argc, char *const argv[])
 	wordbuf_init(&loadlibs);
 	symbol_mt require_section = 0;
 
-	while ((c = getopt(argc, argv, "fl:qr:T:")) != -1) {
+	while ((c = getopt(argc, argv, "Cfl:qr:T:")) != -1) {
 		switch (c) {
+		case 'C': cumulative_stats_setting = 1; break;
 		case 'f': listing_setting = 1; break;
 		case 'l': wordbuf_push(&loadlibs, (word) optarg); break;
 		case 'q': quiet_setting = 1; break;

@@ -37,7 +37,8 @@
  */
 static struct node *constant_of(const struct term *term)
 {
-	struct node *n = term->constant.binder->val;
+	struct node *n = term->constant.binder->node;
+	assert(n);
 	assert(n->variety == NODE_SENTINEL);
 	assert(n->nref == 0);
 	assert(n->backref == NULL);
@@ -233,10 +234,9 @@ flatten_term(const struct term *term, struct node *prev, unsigned depth)
 	}
 	case TERM_CELL: {
 		/*
-		 * XXX this is nearly identical to TERM_APP, should look
-		 * into merging common functionality.  The only real
-		 * asymmetry is the fun vs arg distinction in application
-		 * flattening.
+		 * This is nearly identical to TERM_APP, but it's a little
+		 * more uniform--we don't have to distinguish between the
+		 * function and arguments when calling flatten_hoist().
 		 */
 		retval.next = prev = NodeCell(prev, depth, term->cell.nelts);
 		struct slot_and_prev sap = { .prev = prev };
