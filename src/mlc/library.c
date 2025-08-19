@@ -50,7 +50,10 @@
  * global static data structures since we don't interleave library
  * reading--there is only ever one library being processed at once.
  */
-static struct circlist run_queue, blocked_queue, complete_queue;
+static struct circlist	run_queue,	/* currently resolvable */
+			blocked_queue,	/* waiting on requirement */
+			complete_queue,	/* all done */
+			failed_queue;	/* encountered an error */
 static struct wordtab sections_available;
 struct sourcefile *the_current_sourcefile;
 static int library_initialized;
@@ -61,6 +64,7 @@ void library_init(void)
 	circlist_init(&run_queue);
 	circlist_init(&blocked_queue);
 	circlist_init(&complete_queue);
+	circlist_init(&failed_queue);
 	wordtab_init(&sections_available, 50 /* size hint */);
 	library_initialized = 1;
 }
@@ -78,6 +82,7 @@ void library_fini(void)
 	free_queue(&run_queue);
 	free_queue(&blocked_queue);
 	free_queue(&complete_queue);
+	free_queue(&failed_queue);
 	wordtab_fini(&sections_available);
 	library_initialized = 0;
 }
@@ -302,10 +307,14 @@ void library_queue(struct sourcefile *sf)
 
 struct sourcefile *library_recycle(void)
 {
-	assert(circlist_is_inhabited(&complete_queue));
-	struct sourcefile *sf = node_of(struct sourcefile,
-					circlist_remove_head(&complete_queue));
+	struct sourcefile *sf;
+	assert(circlist_is_inhabited(&complete_queue) ||
+	       circlist_is_inhabited(&failed_queue));
+	sf = node_of(struct sourcefile, circlist_remove_head(&complete_queue)) ?
+	   : node_of(struct sourcefile, circlist_remove_head(&failed_queue));
+	assert(sf);
 	assert(circlist_is_empty(&complete_queue));
+	assert(circlist_is_empty(&failed_queue));
 	return sf;
 }
 
@@ -352,8 +361,7 @@ int library_resolve(void)
 			 */
 			if (stmt->variety == STMT_MARKER) {
 				blocked = handle_marker(sf, stmt);
-				if (blocked < 0)
-					return -1;
+				if (blocked < 0) goto fail_sf;
 			} else {
 				int retval = stmt_eval(stmt);
 				if (retval) {
@@ -362,7 +370,7 @@ int library_resolve(void)
 					     symtab_lookup(sf->library),
 					     symtab_lookup(sf->filename),
 					     stmt->line0, stmt->line1);
-					return -1;
+					goto fail_sf;
 				}
 			}
 		}
@@ -399,4 +407,9 @@ int library_resolve(void)
 		return -1;
 	}
 	return 0;
+
+fail_sf:
+	assert(sf);
+	circlist_add_tail(&failed_queue, &sf->entry);
+	return -1;
 }
