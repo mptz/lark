@@ -1,7 +1,7 @@
 #ifndef LARK_UTIL_WORDTAB_H
 #define LARK_UTIL_WORDTAB_H
 /*
- * Copyright (c) 2009-2024 Michael P. Touloumtzis.
+ * Copyright (c) 2009-2025 Michael P. Touloumtzis.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -34,25 +34,25 @@ struct wordtab_entry {
 	void *data;
 };
 
-struct cuckoo_bin {
+struct wordtab_nest {
 	struct wordtab_entry entries [WORDTAB_NEST_SIZE];
 };
 
 struct wordtab {
 	uint64_t salt;
-	size_t capacity;
 	void *oob;
-	struct cuckoo_bin *bins;
+	size_t nnests;
+	struct wordtab_nest *nests;
 };
 
 struct wordtab_iter {
 	const struct wordtab *wordtab;
-	size_t bin;
+	size_t nest;
 	unsigned entry;
 };
 
 struct wordtab_stats {
-	size_t capacity, used, bins, binsused,
+	size_t capacity, used, nests, nestsused,
 	       entry_used [WORDTAB_NEST_SIZE];
 };
 
@@ -64,8 +64,9 @@ extern bool wordtab_is_empty(struct wordtab *table);
 extern void wordtab_put(struct wordtab *table, word key, void *data);
 extern bool wordtab_rub(struct wordtab *table, word key);
 extern void wordtab_rub_all(struct wordtab *table);
-extern void wordtab_set_oob(struct wordtab *table, void *oob);
-extern void wordtab_stats(struct wordtab *table, struct wordtab_stats *stats);
+extern int wordtab_set_oob(struct wordtab *table, void *oob);
+extern void wordtab_stats(const struct wordtab *table,
+			  struct wordtab_stats *stats);
 extern void wordtab_iter_init(const struct wordtab *table,
 			      struct wordtab_iter *iter);
 extern struct wordtab_entry *wordtab_iter_next(struct wordtab_iter *iter);

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009-2024 Michael P. Touloumtzis.
+ * Copyright (c) 2009-2025 Michael P. Touloumtzis.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -33,29 +33,30 @@
 #include "wordtab.h"
 
 #define CACHE_LINE_SIZE 64		/* not always, but often */
-#define CUCKOO_DEFAULT_SIZE 256
+#define WORDTAB_DEFAULT_NNESTS 256
 
 static void
 wordtab_alloc(struct wordtab *table)
 {
-	assert(__builtin_popcountl(table->capacity) == 1);	/* power of 2 */
+	assert(__builtin_popcountl(table->nnests) == 1);	/* power of 2 */
 	if (getrandom(&table->salt, sizeof table->salt, 0) < 0)
 		ppanic("getrandom");	/* fresh salt each resize */
-	size_t size = sizeof table->bins[0] * table->capacity;
-	if (posix_memalign((void**) &table->bins, CACHE_LINE_SIZE, size))
+	size_t size = sizeof table->nests[0] * table->nnests;
+	if (posix_memalign((void**) &table->nests, CACHE_LINE_SIZE, size))
 		panic("Virtual memory exhausted (aligned allocation)\n");
-	memset(table->bins, 0, size);
+	memset(table->nests, 0, size);
 	if (table->oob == 0)
 		return;
-	for (size_t i = 0; i < table->capacity; ++i)
+	for (size_t i = 0; i < table->nnests; ++i)
 		for (unsigned j = 0; j < WORDTAB_NEST_SIZE; ++j)
-			table->bins[i].entries[j].data = table->oob;
+			table->nests[i].entries[j].data = table->oob;
 }
 
 void
 wordtab_init(struct wordtab *table, size_t hint)
 {
-	table->capacity = CUCKOO_DEFAULT_SIZE;
+	table->nnests = WORDTAB_DEFAULT_NNESTS;
+	/* convert capacity hint to reasonable # nests */
 	if (hint) {
 		/* Round to next higher power of 2. */
 		hint--;
@@ -68,7 +69,7 @@ wordtab_init(struct wordtab *table, size_t hint)
 		hint |= hint >> 32;
 #endif
 		hint++;
-		table->capacity = MAX(table->capacity, hint);
+		table->nnests = MAX(table->nnests, hint);
 	}
 	table->oob = NULL;
 	wordtab_alloc(table);
@@ -77,7 +78,7 @@ wordtab_init(struct wordtab *table, size_t hint)
 void
 wordtab_fini(struct wordtab *table)
 {
-	free(table->bins);
+	free(table->nests);
 }
 
 void
@@ -93,12 +94,12 @@ wordtab_free_all_data(struct wordtab *table)
 static inline void *
 wordtab_find(const struct wordtab *table, word key, uint32_t hash)
 {
-	const size_t mask = table->capacity - 1;
-	const struct cuckoo_bin *bin = table->bins + (hash & mask);
+	const size_t mask = table->nnests - 1;
+	const struct wordtab_nest *nest = table->nests + (hash & mask);
 	for (unsigned i = 0; i < WORDTAB_NEST_SIZE; ++i)
-		if (bin->entries[i].key == key &&
-		    bin->entries[i].data != table->oob)
-			return bin->entries[i].data;
+		if (nest->entries[i].key == key &&
+		    nest->entries[i].data != table->oob)
+			return nest->entries[i].data;
 	return table->oob;
 }
 
@@ -106,26 +107,26 @@ void *
 wordtab_get(const struct wordtab *table, word key)
 {
 	const uint64_t hash = fghws64(key, table->salt);
-	void *result =	wordtab_find(table, key, hash);
+	void *result = wordtab_find(table, key, hash);
 	return (result != table->oob) ? result :
 			wordtab_find(table, key, hash >> 32);
 }
 
-void
+static void
 wordtab_grow(struct wordtab *table)
 {
 	/*
 	 * Allocate a new table.
 	 */
-	struct cuckoo_bin *tmp = table->bins;
-	table->capacity *= 2;
+	struct wordtab_nest *tmp = table->nests;
+	table->nnests *= 2;
 	wordtab_alloc(table);
 
 	/*
 	 * Insert each entry from the old table.  Note that this rehashes
 	 * everything; we could do this more straightforwardly.
 	 */
-	for (size_t i = 0; i < table->capacity / 2; ++i) {
+	for (size_t i = 0; i < table->nnests / 2; ++i) {
 		for (unsigned j = 0; j < WORDTAB_NEST_SIZE; ++j) {
 			struct wordtab_entry *entry = tmp[i].entries + j;
 			if (entry->data != table->oob)
@@ -146,12 +147,12 @@ wordtab_is_empty(struct wordtab *table)
 static inline bool
 wordtab_update(struct wordtab *table, word key, void *data, uint32_t hash)
 {
-	const size_t mask = table->capacity - 1;
-	struct cuckoo_bin *bin = table->bins + (hash & mask);
+	const size_t mask = table->nnests - 1;
+	struct wordtab_nest *nest = table->nests + (hash & mask);
 	for (unsigned i = 0; i < WORDTAB_NEST_SIZE; ++i)
-		if (bin->entries[i].key == key &&
-		    bin->entries[i].data != table->oob) {
-			bin->entries[i].data = data;
+		if (nest->entries[i].key == key &&
+		    nest->entries[i].data != table->oob) {
+			nest->entries[i].data = data;
 			return true;
 		}
 	return false;
@@ -178,16 +179,17 @@ wordtab_put(struct wordtab *table, word key, void *data)
 	/*
 	 * We are going to have to add rather than update.
 	 */
-	size_t eject = 0, mask = table->capacity - 1, pos = hash & mask;
+	const size_t mask = table->nnests - 1;
+	size_t eject = 0, pos = hash & mask;
 	struct wordtab_entry entry = { .key = key, .data = data };
-	for (size_t tries = ceil(log(table->capacity)); tries; --tries) {
+	for (size_t tries = ceil(log(table->nnests)); tries; --tries) {
 		/*
 		 * If there's room where we've chosen, insert uneventfully.
 		 */
-		struct cuckoo_bin *bin = table->bins + pos;
+		struct wordtab_nest *nest = table->nests + pos;
 		for (unsigned i = 0; i < WORDTAB_NEST_SIZE; ++i)
-			if (bin->entries[i].data == table->oob) {
-				bin->entries[i] = entry;
+			if (nest->entries[i].data == table->oob) {
+				nest->entries[i] = entry;
 				return;
 			}
 
@@ -197,8 +199,8 @@ wordtab_put(struct wordtab *table, word key, void *data)
 		 * cycling for most hash collisions, and may reduce the
 		 * chance of cycling in general (unverified).
 		 */
-		struct wordtab_entry tmp = bin->entries[eject];
-		bin->entries[eject] = entry;
+		struct wordtab_entry tmp = nest->entries[eject];
+		nest->entries[eject] = entry;
 		entry = tmp;
 		eject = (eject + 1) % WORDTAB_NEST_SIZE;
 
@@ -246,42 +248,48 @@ wordtab_rub_all(struct wordtab *table)
 	/*
 	 * In theory this could resize down, but we currently don't.
 	 */
-	for (size_t i = 0; i < table->capacity; ++i)
+	for (size_t i = 0; i < table->nnests; ++i)
 		for (unsigned j = 0; j < WORDTAB_NEST_SIZE; ++j)
-			if (table->bins[i].entries[j].data != table->oob)
-				table->bins[i].entries[j].data = table->oob;
+			if (table->nests[i].entries[j].data != table->oob)
+				table->nests[i].entries[j].data = table->oob;
 }
 
-void
+int
 wordtab_set_oob(struct wordtab *table, void *oob)
 {
-	void *old = table->oob;
-	for (size_t i = 0; i < table->capacity; ++i)
+	if (oob == table->oob)
+		return 0;
+
+	/* if new oob value is in use as data, return an error */
+	for (size_t i = 0; i < table->nnests; ++i)
 		for (unsigned j = 0; j < WORDTAB_NEST_SIZE; ++j)
-			if (table->bins[i].entries[j].data == old)
-				table->bins[i].entries[j].data = oob;
+			if (table->nests[i].entries[j].data == oob)
+				return -1;
+
+	void *old = table->oob;
+	for (size_t i = 0; i < table->nnests; ++i)
+		for (unsigned j = 0; j < WORDTAB_NEST_SIZE; ++j)
+			if (table->nests[i].entries[j].data == old)
+				table->nests[i].entries[j].data = oob;
 	table->oob = oob;
+	return 0;
 }
 
 void
-wordtab_stats(struct wordtab *table, struct wordtab_stats *stats)
+wordtab_stats(const struct wordtab *table, struct wordtab_stats *stats)
 {
-	/*
-	 * XXX confusing... what we call 'capacity' within the
-	 * table is actually the number of bins.  Should rename.
-	 */
 	memset(stats, 0, sizeof *stats);
-	stats->capacity = table->capacity * WORDTAB_NEST_SIZE;
-	stats->bins = table->capacity;
-	for (size_t i = 0; i < table->capacity; ++i) {
-		unsigned binused = 0;
+	stats->capacity = table->nnests * WORDTAB_NEST_SIZE;
+	stats->nests = table->nnests;
+	for (size_t i = 0; i < table->nnests; ++i) {
+		unsigned nestused = 0;
 		for (unsigned j = 0; j < WORDTAB_NEST_SIZE; ++j)
-			if (table->bins[i].entries[j].data != table->oob) {
-				binused = 1;
+			if (table->nests[i].entries[j].data != table->oob) {
+				nestused = 1;
 				++stats->used;
 				++stats->entry_used[j];
 			}
-		stats->binsused += binused;
+		stats->nestsused += nestused;
 	}
 }
 
@@ -289,7 +297,7 @@ void
 wordtab_iter_init(const struct wordtab *wordtab, struct wordtab_iter *iter)
 {
 	iter->wordtab = wordtab;
-	iter->bin = 0;
+	iter->nest = 0;
 	iter->entry = 0;
 }
 
@@ -297,14 +305,14 @@ struct wordtab_entry *
 wordtab_iter_next(struct wordtab_iter *iter)
 {
 	const struct wordtab *tab = iter->wordtab;
-	while (iter->bin < tab->capacity) {
+	while (iter->nest < tab->nnests) {
 		while (iter->entry < WORDTAB_NEST_SIZE) {
 			struct wordtab_entry *entry =
-				tab->bins[iter->bin].entries + iter->entry++;
+				tab->nests[iter->nest].entries + iter->entry++;
 			if (entry->data != tab->oob)
 				return entry;
 		}
-		iter->bin++;
+		iter->nest++;
 		iter->entry = 0;
 	}
 	return NULL;

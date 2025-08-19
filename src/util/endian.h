@@ -1,0 +1,60 @@
+#ifndef LARK_UTIL_ENDIAN_H
+#define LARK_UTIL_ENDIAN_H
+/*
+ * Copyright (c) 2008-2025 Michael P. Touloumtzis.
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining
+ * a copy of this software and associated documentation files (the
+ * "Software"), to deal in the Software without restriction, including
+ * without limitation the rights to use, copy, modify, merge, publish,
+ * distribute, sublicense, and/or sell copies of the Software, and to
+ * permit persons to whom the Software is furnished to do so, subject
+ * to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be
+ * included in all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+ * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+ * CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+ * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+ * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
+
+#include <endian.h>
+
+/*
+ * Use FGH_NO_ENDIAN to compile endian-independent (but slower) code.
+ *
+ * The endian-specific variants dereference past the end of the given
+ * key, but not past the word containing the end.  The don't *use* the
+ * data past the key, they just read it from memory and discard it.
+ *
+ * I'm not aware of any current architectures which provide memory
+ * protection at byte granularity, but if they are around, they should
+ * use the NO_ENDIAN version.
+ *
+ * Also use NO_ENDIAN if you care about generating the same hash values
+ * on different architectures.  Endian-specific variants are optimized
+ * for performance rather than for consistency.
+ */
+/* #define FGH_NO_ENDIAN 1 */
+
+#ifdef FGH_NO_ENDIAN
+#define FGH_BIG_ENDIAN		0
+#define FGH_LITTLE_ENDIAN	0
+#else /* !FGH_NO_ENDIAN */
+#if __BYTE_ORDER == __LITTLE_ENDIAN
+#define FGH_BIG_ENDIAN		0
+#define FGH_LITTLE_ENDIAN	1
+#elif __BYTE_ORDER == __BIG_ENDIAN
+#define FGH_BIG_ENDIAN		1
+#define FGH_LITTLE_ENDIAN	0
+#else
+#error "Can't determine native byte order"
+#endif /* __BYTE_ORDER tests */
+#endif /* FGH_NO_ENDIAN */
+
+#endif /* LARK_UTIL_ENDIAN_H */

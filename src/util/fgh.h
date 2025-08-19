@@ -28,11 +28,6 @@
 /*
  * A Fairly Good Hash.
  */
-
-extern uint32_t
-fgh32(const void *key, size_t size, uintptr_t k);
-
-extern uint64_t
-fgh64(const void *key, size_t size);
+extern uint64_t fghs64(const void *key, size_t size, uint64_t seed);
 
 #endif /* LARK_UTIL_FGH_H */

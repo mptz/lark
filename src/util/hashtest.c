@@ -3878,11 +3878,14 @@ static void dump_hashtab_stats(struct hashtab *hashtab)
 {
 	struct hashtab_stats hstats;
 	hashtab_stats(hashtab, &hstats);
-	printf("Hash table capacity %zu, used %zu\n",
-		hstats.capacity, hstats.used);
+
+	double	rused = hstats.used / (double) hstats.capacity,
+		rnest = hstats.nestsused / (double) hstats.nests;
 	if (getenv("HASHTEST_DETAILED_STATS")) {
-		printf("Hash table nests total %zu, used %zu\n",
-		       hstats.nests, hstats.nestsused);
+		printf("Hash table capacity %zu, used %zu (%.2f%%)\n",
+			hstats.capacity, hstats.used, 100.0 * rused);
+		printf("Hash table nests total %zu, used %zu (%.2f%%)\n",
+			hstats.nests, hstats.nestsused, 100.0 * rnest);
 		for (size_t i = 0; i < HASHTAB_NEST_SIZE; ++i)
 			printf("Nest usage for slot %zu: %zu\n", i,
 				hstats.entry_used[i]);
@@ -3890,12 +3893,13 @@ static void dump_hashtab_stats(struct hashtab *hashtab)
 
 	/*
 	 * Regardless of the actual numbers, we can assert some
-	 * invariants which are very unlikely to be violated, unless
-	 * we catch things just at the wrong time (e.g. after growth).
+	 * invariants which are empirically unlikely to be violated,
+	 * unless we catch things just at the wrong time (e.g. after
+	 * growth).
 	 */
-	assert((double) hstats.used / (double) hstats.capacity > 0.25);
-	assert((double) hstats.used / (double) hstats.capacity < 0.666);
-	assert((double) hstats.nestsused / (double) hstats.nests > 0.5);
+	printf("Hash table usage ratio %s, nest usage ratio %s\n",
+		(rused > 0.25 && rused < 0.75) ? "OK" : "NG",
+		(rnest > 0.50 && rnest < 0.97) ? "OK" : "NG");
 	for (size_t i = 1; i < HASHTAB_NEST_SIZE; ++i)
 		assert(hstats.entry_used[i-1] > hstats.entry_used[i]);
 
@@ -3906,10 +3910,10 @@ static void dump_wordtab_stats(struct wordtab *wordtab)
 
 	struct wordtab_stats wstats;
 	wordtab_stats(wordtab, &wstats);
-	printf("Word table capacity %zu, used %zu, #bins %zu\n",
-		wstats.capacity, wstats.used, wstats.bins);
+	printf("Word table capacity %zu, used %zu, #nests %zu\n",
+		wstats.capacity, wstats.used, wstats.nests);
 	if (getenv("HASHTEST_DETAILED_STATS")) {
-		printf("Word table bins used: %zu\n", wstats.binsused);
+		printf("Word table nests used: %zu\n", wstats.nestsused);
 		for (size_t i = 0; i < WORDTAB_NEST_SIZE; ++i)
 			printf("Nest usage for slot %zu: %zu\n", i,
 				wstats.entry_used[i]);

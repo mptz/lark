@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009-2018 Michael P. Touloumtzis.
+ * Copyright (c) 2009-2025 Michael P. Touloumtzis.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -25,22 +25,26 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/random.h>
 
-#include "hashtab.h"
 #include "fgh.h"
-#include "fghk.h"
+#include "hashtab.h"
 #include "memutil.h"
 #include "message.h"
 #include "minmax.h"
 
+#define CACHE_LINE_SIZE	64		/* not always, but often */
 #define HASHTAB_DEFAULT_NESTS 32	/* capacity == #nests * nest size */
 
 static void
 hashtab_alloc(struct hashtab *table)
 {
-	assert(__builtin_popcountl(table->nnests) == 1); /* power of 2 */
+	assert(__builtin_popcountl(table->nnests) == 1); 	/* power of 2 */
+	if (getrandom(&table->salt, sizeof table->salt, 0) < 0)
+		ppanic("getrandom");	/* fresh salt each resize */
 	size_t size = table->nnests * sizeof table->nests[0];
-	table->nests = xmalloc(size);
+	if (posix_memalign((void**) &table->nests, CACHE_LINE_SIZE, size))
+		panic("Virtual memory exhausted (aligned allocation)\n");
 	memset(table->nests, 0, size);
 	if (table->oob == 0)
 		return;
@@ -52,7 +56,6 @@ hashtab_alloc(struct hashtab *table)
 void
 hashtab_init(struct hashtab *table, size_t hint)
 {
-	table->oob = NULL;
 	table->nnests = HASHTAB_DEFAULT_NESTS;
 	/* convert capacity hint to reasonable # nests */
 	hint = hint * 2 / HASHTAB_NEST_SIZE;
@@ -70,6 +73,7 @@ hashtab_init(struct hashtab *table, size_t hint)
 		hint++;
 		table->nnests = MAX(table->nnests, hint);
 	}
+	table->oob = NULL;
 	hashtab_alloc(table);
 }
 
@@ -86,7 +90,7 @@ hashtab_free_all_keys(struct hashtab *table)
 	hashtab_iter_init(table, &iter);
 	struct hashtab_entry *entry;
 	while ((entry = hashtab_iter_next(&iter)))
-		xfree(entry->key);
+		xfree(entry->key);	/* xfree b/c key is const */
 }
 
 void
@@ -111,11 +115,10 @@ hashtab_free_all(struct hashtab *table)
 
 static inline void *
 hashtab_find(const struct hashtab *table, const void *key,
-	     size_t keysize, uintptr_t hashk)
+	     size_t keysize, uint32_t hash)
 {
-	size_t mask = table->nnests - 1;
-	const struct hashtab_nest *nest = table->nests +
-		(fgh32(key, keysize, hashk) & mask);
+	const size_t mask = table->nnests - 1;
+	const struct hashtab_nest *nest = table->nests + (hash & mask);
 	for (unsigned i = 0; i < HASHTAB_NEST_SIZE; ++i)
 		if (nest->entries[i].keysize == keysize &&
 		    !memcmp(nest->entries[i].key, key, keysize) &&
@@ -128,12 +131,13 @@ void *
 hashtab_get(const struct hashtab *table, const void *key,
 	    size_t keysize)
 {
-	void *result =	hashtab_find(table, key, keysize, FGHK[0]);
+	const uint64_t hash = fghs64(key, keysize, table->salt);
+	void *result = hashtab_find(table, key, keysize, hash);
 	return (result != table->oob) ? result :
-			hashtab_find(table, key, keysize, FGHK[1]);
+			hashtab_find(table, key, keysize, hash >> 32);
 }
 
-void
+static void
 hashtab_grow(struct hashtab *table)
 {
 	/*
@@ -160,11 +164,10 @@ hashtab_grow(struct hashtab *table)
 
 static inline bool
 hashtab_update(struct hashtab *table, const void *key, size_t keysize,
-	       void *data, uintptr_t hashk)
+	       void *data, uint32_t hash)
 {
-	size_t mask = table->nnests - 1;
-	struct hashtab_nest *nest = table->nests +
-		(fgh32(key, keysize, hashk) & mask);
+	const size_t mask = table->nnests - 1;
+	struct hashtab_nest *nest = table->nests + (hash & mask);
 	for (unsigned i = 0; i < HASHTAB_NEST_SIZE; ++i)
 		if (nest->entries[i].keysize == keysize &&
 		    !memcmp(nest->entries[i].key, key, keysize) &&
@@ -182,26 +185,24 @@ hashtab_put(struct hashtab *table, const void *key,
 	/*
 	 * Make sure we're not trying to insert the out-of-band value.
 	 */
-	assert(data != table->oob);
+	if (data == table->oob) panic("Tried to insert out-of-band value\n");
 
 	/*
 	 * First look for the value; if found, update data and return.
 	 * We could have an alternate version of this function which skips
 	 * this test when the keys are known unique, as when rehashing.
 	 */
-	if (hashtab_update(table, key, keysize, data, FGHK[0]) ||
-	    hashtab_update(table, key, keysize, data, FGHK[1]))
+	uint64_t hash = fghs64(key, keysize, table->salt);
+	if (hashtab_update(table, key, keysize, data, hash) ||
+	    hashtab_update(table, key, keysize, data, hash >> 32))
 		return;
 
 	/*
-	 * We are going to have to add rather than update.  We currently
-	 * rehash in this case, which is lame but keeps the code a little
-	 * cleaner while I'm debugging it.
+	 * We are going to have to add rather than update.
 	 */
-	size_t eject = 0, mask = table->nnests - 1,
-	       pos = fgh32(key, keysize, FGHK[0]) & mask;
-	struct hashtab_entry entry = { .key = key,
-				       .keysize = keysize,
+	const size_t mask = table->nnests - 1;
+	size_t eject = 0, pos = hash & mask;
+	struct hashtab_entry entry = { .key = key, .keysize = keysize,
 				       .data = data };
 	for (size_t tries = ceil(log(table->nnests)); tries; --tries) {
 		/*
@@ -235,9 +236,8 @@ hashtab_put(struct hashtab *table, const void *key,
 		 * to insert it according to its current hash value),
 		 * it's mostly likely a sign of a bug, so we panic.
 		 */
-		uint32_t h1, h2;
-		h1 = mask & fgh32(entry.key, entry.keysize, FGHK[0]);
-		h2 = mask & fgh32(entry.key, entry.keysize, FGHK[1]);
+		hash = fghs64(entry.key, entry.keysize, table->salt);
+		uint32_t h1 = hash & mask, h2 = (hash >> 32) & mask;
 		if	(pos == h1) pos = h2;
 		else if (pos == h2) pos = h1;
 		else	panic("Table key mutated!\n");
@@ -256,7 +256,7 @@ hashtab_set_oob(struct hashtab *table, void *oob)
 	if (oob == table->oob)
 		return 0;
 
-	/* If new oob value is in use as data, return an error */
+	/* if new oob value is in use as data, return an error */
 	for (size_t i = 0; i < table->nnests; ++i)
 		for (unsigned j = 0; j < HASHTAB_NEST_SIZE; ++j)
 			if (table->nests[i].entries[j].data == oob)
@@ -272,7 +272,7 @@ hashtab_set_oob(struct hashtab *table, void *oob)
 }
 
 void
-hashtab_stats(struct hashtab *table, struct hashtab_stats *stats)
+hashtab_stats(const struct hashtab *table, struct hashtab_stats *stats)
 {
 	memset(stats, 0, sizeof *stats);
 	stats->capacity = table->nnests * HASHTAB_NEST_SIZE;
@@ -290,7 +290,7 @@ hashtab_stats(struct hashtab *table, struct hashtab_stats *stats)
 }
 
 void
-hashtab_iter_init(struct hashtab *hashtab, struct hashtab_iter *iter)
+hashtab_iter_init(const struct hashtab *hashtab, struct hashtab_iter *iter)
 {
 	iter->hashtab = hashtab;
 	iter->nest = 0;
@@ -300,7 +300,7 @@ hashtab_iter_init(struct hashtab *hashtab, struct hashtab_iter *iter)
 struct hashtab_entry *
 hashtab_iter_next(struct hashtab_iter *iter)
 {
-	struct hashtab *tab = iter->hashtab;
+	const struct hashtab *tab = iter->hashtab;
 	while (iter->nest < tab->nnests) {
 		while (iter->entry < HASHTAB_NEST_SIZE) {
 			struct hashtab_entry *entry =

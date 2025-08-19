@@ -1,7 +1,7 @@
 #ifndef LARK_UTIL_HASHTAB_H
 #define LARK_UTIL_HASHTAB_H
 /*
- * Copyright (c) 2009-2018 Michael P. Touloumtzis.
+ * Copyright (c) 2009-2025 Michael P. Touloumtzis.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -23,6 +23,7 @@
  */
 
 #include <stddef.h>
+#include <stdint.h>
 
 #define HASHTAB_NEST_SIZE 4
 
@@ -37,13 +38,14 @@ struct hashtab_nest {
 };
 
 struct hashtab {
+	uint64_t salt;
 	void *oob;
 	size_t nnests;
 	struct hashtab_nest *nests;
 };
 
 struct hashtab_iter {
-	struct hashtab *hashtab;
+	const struct hashtab *hashtab;
 	size_t nest;
 	unsigned entry;
 };
@@ -63,8 +65,10 @@ extern void *hashtab_get(const struct hashtab *table, const void *key,
 extern void hashtab_put(struct hashtab *table, const void *key,
 			size_t keysize, void *data);
 extern int hashtab_set_oob(struct hashtab *table, void *oob);
-extern void hashtab_stats(struct hashtab *table, struct hashtab_stats *stats);
-extern void hashtab_iter_init(struct hashtab *table, struct hashtab_iter *iter);
+extern void hashtab_stats(const struct hashtab *table,
+			  struct hashtab_stats *stats);
+extern void hashtab_iter_init(const struct hashtab *table,
+			      struct hashtab_iter *iter);
 extern struct hashtab_entry *hashtab_iter_next(struct hashtab_iter *iter);
 
 #endif /* LARK_UTIL_HASHTAB_H */
