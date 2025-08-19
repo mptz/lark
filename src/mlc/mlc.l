@@ -329,7 +329,7 @@ void mlc_scan_init_raw(struct scanner_state *scanner)
 void mlc_scan_init_repl(struct scanner_state *scanner)
 {
 	mlc_scan_init_raw(scanner);
-	scanner->repl = 0;
+	scanner->repl = 1;
 }
 
 /*
