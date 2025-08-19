@@ -22,11 +22,10 @@
 
 #include <assert.h>
 #include <stdio.h>
-#include <sys/time.h>
-#include <unistd.h>
 
 #include <util/memutil.h>
 #include <util/message.h>
+#include <util/timeutil.h>
 
 #include "binder.h"
 #include "env.h"
@@ -167,16 +166,14 @@ static void sanity_check_reduction(const struct node *node)
 
 static struct node *timed_reduction(struct node *node, enum reduction reduction)
 {
-	struct timeval t0, t1;
-	gettimeofday(&t0, NULL);
+	uint64_t t0, t1;
+	t0 = time_now();
 	node = reduce(node, reduction);
-	gettimeofday(&t1, NULL);
+	t1 = time_now();
 	sanity_check_reduction(node);
 
 	if (!quiet_setting) {
-		long elapsed = (t1.tv_sec - t0.tv_sec) * 1000000 +
-			       (t1.tv_usec - t0.tv_usec);
-		printf("-dt-: %.6fs\n", elapsed / 1000000.0);
+		printf("-dt-: %.6fs\n", (t1 - t0) / 1000000.0);
 		node_labeled_print("eval", node);
 	}
 
