@@ -24,16 +24,13 @@
 #include "endian.h"
 #include "fgh.h"
 
-/*
- * XXX not tested... should explore other ways of incorporating the seed
- */
 uint64_t
 fghs64(const void *key, size_t size, uint64_t seed)
 {
 	static const uint64_t K = 0x63CFA97B40D4BB53ULL;
 	const uint64_t *p = key;
 	size_t i = size >> 5;		/* i = # of 32-bit blocks in key */
-	uint64_t h = K, g = size ^ seed;
+	uint64_t g = size, h = seed;
 
 	/*
 	 * Hand the ragged tail end of the key first.
