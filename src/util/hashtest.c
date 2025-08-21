@@ -3874,10 +3874,13 @@ static const char *const planets [] = {
  * of the hash function and will vary between 32- and 64-bit hosts.
  */
 
-static void dump_hashtab_stats(struct hashtab *hashtab)
+static void dump_hashtab_stats(struct hashtab *hashtab, size_t nwords)
 {
 	struct hashtab_stats hstats;
 	hashtab_stats(hashtab, &hstats);
+
+	if (hstats.used != nwords)
+		panic("Word count mismatch!\n");
 
 	double	rused = hstats.used / (double) hstats.capacity,
 		rnest = hstats.nestsused / (double) hstats.nests;
@@ -3898,26 +3901,42 @@ static void dump_hashtab_stats(struct hashtab *hashtab)
 	 * growth).
 	 */
 	printf("Hash table usage ratio %s, nest usage ratio %s\n",
-		(rused > 0.25 && rused < 0.75) ? "OK" : "NG",
-		(rnest > 0.50 && rnest < 0.97) ? "OK" : "NG");
+		(rused > 0.30 && rused < 0.80)	? "OK" : "NG",
+		(rnest > 0.70)			? "OK" : "NG");
 	for (size_t i = 1; i < HASHTAB_NEST_SIZE; ++i)
 		assert(hstats.entry_used[i-1] > hstats.entry_used[i]);
 
 }
 
-static void dump_wordtab_stats(struct wordtab *wordtab)
+static void dump_wordtab_stats(struct wordtab *wordtab, size_t nwords)
 {
 
 	struct wordtab_stats wstats;
 	wordtab_stats(wordtab, &wstats);
-	printf("Word table capacity %zu, used %zu, #nests %zu\n",
-		wstats.capacity, wstats.used, wstats.nests);
+
+	if (wstats.used != nwords)
+		panic("Word count mismatch!\n");
+
+	double	rused = wstats.used / (double) wstats.capacity,
+		rnest = wstats.nestsused / (double) wstats.nests;
 	if (getenv("HASHTEST_DETAILED_STATS")) {
-		printf("Word table nests used: %zu\n", wstats.nestsused);
+		printf("Word table capacity %zu, used %zu (%.2f%%)\n",
+			wstats.capacity, wstats.used, 100.0 * rused);
+		printf("Word table nests total %zu, used %zu (%.2f%%)\n",
+			wstats.nests, wstats.nestsused, 100.0 * rnest);
 		for (size_t i = 0; i < WORDTAB_NEST_SIZE; ++i)
 			printf("Nest usage for slot %zu: %zu\n", i,
 				wstats.entry_used[i]);
 	}
+
+	/*
+	 * Again, these numbers are purely empirically derived.
+	 */
+	printf("Word table usage ratio %s, nest usage ratio %s\n",
+		(rused > 0.30 && rused < 0.80)	? "OK" : "NG",
+		(rnest > 0.70)			? "OK" : "NG");
+	for (size_t i = 1; i < WORDTAB_NEST_SIZE; ++i)
+		assert(wstats.entry_used[i-1] > wstats.entry_used[i]);
 }
 
 static void run_dict_test(const char *dict)
@@ -3940,7 +3959,7 @@ static void run_dict_test(const char *dict)
 	 * index, and the corresponding wordtab entry stores that
 	 * dictionary-word's length.
 	 */
-	char buf [100];
+	char buf [8192];
 	word nwords;
 	for (nwords = 1; fgets(buf, sizeof buf, input); ++nwords) {
 		size_t size = strlen(buf) + 1;
@@ -3948,6 +3967,7 @@ static void run_dict_test(const char *dict)
 		wordtab_put(&wordtab, nwords, (void*) (size - 1));
 	}
 	--nwords;	/* we started at 1 */
+	printf("inserted %zu words\n", nwords);
 
 	if (pclose(input))
 		ppanic(cmd);
@@ -3970,8 +3990,8 @@ static void run_dict_test(const char *dict)
 	 * we should always sanity-check the stats (e.g. capacity vs. used
 	 * should be a reasonable ratio).
 	 */
-	dump_hashtab_stats(&hashtab);
-	dump_wordtab_stats(&wordtab);
+	dump_hashtab_stats(&hashtab, nwords);
+	dump_wordtab_stats(&wordtab, nwords);
 
 	/*
 	 * Clean up tables including freeing all the strdup'd hash keys.
@@ -4034,7 +4054,8 @@ static void run_oob_test(void)
 	if (p != oob) panic("hashtab_get\n");
 
 	/* Force growth of table with non-default OOB value */
-	for (size_t i = 0; i < sizeof planets / sizeof planets[0]; ++i)
+	const size_t nplanets = sizeof planets / sizeof planets[0];
+	for (size_t i = 0; i < nplanets; ++i)
 		hashtab_put(&hashtab, planets[i], strlen(planets[i]) + 1,
 			    (void*) planets[i]);
 
@@ -4056,7 +4077,7 @@ static void run_oob_test(void)
 	p = hashtab_get(&hashtab, cherry, sizeof cherry);
 	if (p != cherry) panic("hashtab_get\n");
 
-	dump_hashtab_stats(&hashtab);
+	dump_hashtab_stats(&hashtab, 3 + nplanets);
 	hashtab_fini(&hashtab);
 }
 
@@ -4066,6 +4087,7 @@ int main(int argc, char *argv[])
 	run_dict_test("american-english");
 	run_dict_test("library-symbols");
 	run_dict_test("linux-manifest");
+	run_dict_test("oeis-numbers");
 	run_dict_test("primes");
 	run_dict_test("unicode-names");
 	run_dict_test("war-and-peace-paragraphs.txt");

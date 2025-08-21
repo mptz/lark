@@ -1,24 +1,35 @@
 dictionary test: american-english
+inserted 99171 words
 Hash table usage ratio OK, nest usage ratio OK
-Word table capacity 131072, used 99171, #nests 16384
+Word table usage ratio OK, nest usage ratio OK
 dictionary test: library-symbols
+inserted 68936 words
 Hash table usage ratio OK, nest usage ratio OK
-Word table capacity 131072, used 69063, #nests 16384
+Word table usage ratio OK, nest usage ratio OK
 dictionary test: linux-manifest
+inserted 9855 words
 Hash table usage ratio OK, nest usage ratio OK
-Word table capacity 16384, used 9855, #nests 2048
+Word table usage ratio OK, nest usage ratio OK
+dictionary test: oeis-numbers
+inserted 1934164 words
+Hash table usage ratio OK, nest usage ratio OK
+Word table usage ratio OK, nest usage ratio OK
 dictionary test: primes
+inserted 664579 words
 Hash table usage ratio OK, nest usage ratio OK
-Word table capacity 1048576, used 664579, #nests 131072
+Word table usage ratio OK, nest usage ratio OK
 dictionary test: unicode-names
+inserted 10538 words
 Hash table usage ratio OK, nest usage ratio OK
-Word table capacity 16384, used 10538, #nests 2048
+Word table usage ratio OK, nest usage ratio OK
 dictionary test: war-and-peace-paragraphs.txt
+inserted 11553 words
 Hash table usage ratio OK, nest usage ratio OK
-Word table capacity 65536, used 38068, #nests 8192
+Word table usage ratio OK, nest usage ratio OK
 dictionary test: wordlist
+inserted 173528 words
 Hash table usage ratio OK, nest usage ratio OK
-Word table capacity 262144, used 173528, #nests 32768
+Word table usage ratio OK, nest usage ratio OK
 free test
 oob test
 Hash table usage ratio OK, nest usage ratio OK

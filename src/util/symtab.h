@@ -23,6 +23,7 @@
  */
 
 typedef unsigned symbol_mt;
+#define NOSYMBOL 0
 extern const symbol_mt the_empty_symbol;
 
 extern void symtab_dump(void);
