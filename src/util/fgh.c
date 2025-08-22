@@ -30,7 +30,7 @@ fghs64(const void *key, size_t size, uint64_t seed)
 	static const uint64_t K = 0x63CFA97B40D4BB53ULL;
 	const uint64_t *p = key;
 	size_t blocks = size >> 5;	/* # of 32-bit blocks in key */
-	uint64_t g = size, h = seed;
+	uint64_t g = seed, h = size;
 
 	/*
 	 * Hand the ragged tail end of the key first.
