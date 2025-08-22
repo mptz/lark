@@ -29,7 +29,7 @@ fghs64(const void *key, size_t size, uint64_t seed)
 {
 	static const uint64_t K = 0x63CFA97B40D4BB53ULL;
 	const uint64_t *p = key;
-	size_t i = size >> 5;		/* i = # of 32-bit blocks in key */
+	size_t blocks = size >> 5;	/* # of 32-bit blocks in key */
 	uint64_t g = size, h = seed;
 
 	/*
@@ -71,7 +71,7 @@ fghs64(const void *key, size_t size, uint64_t seed)
 #endif
 
 	switch (size & 3) {
-		while (i--) {
+		while (blocks--) {
 			h ^= *p++ ^ (h << 15 | h >> 49); h *= K;
 	case 3: 	g ^= *p++ ^ (g << 17 | g >> 47); g *= K;
 	case 2: 	h ^= *p++ ^ (h << 15 | h >> 49); h *= K;
